@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"crypto/rand"
-	"embed"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -15,12 +14,10 @@ import (
 
 	"github.com/berkaycubuk/polaris-agent/internal/captioner"
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
+	"github.com/berkaycubuk/polaris-agent/internal/skills"
 	"github.com/berkaycubuk/polaris-agent/internal/storage"
 	"github.com/berkaycubuk/polaris-agent/internal/tools"
 )
-
-//go:embed builtins/*.md
-var builtinSkillsFS embed.FS
 
 const (
 	defaultSoul = `You are Polaris, a personal AI companion that adapts and grows with your user.
@@ -150,35 +147,7 @@ func (a *Agent) ensureDataDirs() error {
 			return err
 		}
 	}
-	return a.seedBuiltinSkills()
-}
-
-// seedBuiltinSkills writes embedded built-in skills into skills/ if they
-// are missing. It does NOT overwrite existing files, so the user (or the
-// agent itself) can edit a skill without it being clobbered on restart.
-func (a *Agent) seedBuiltinSkills() error {
-	entries, err := builtinSkillsFS.ReadDir("builtins")
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		dst := filepath.Join(a.dataDir, "skills", e.Name())
-		if _, err := os.Stat(dst); err == nil {
-			continue
-		}
-		data, err := builtinSkillsFS.ReadFile("builtins/" + e.Name())
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			return err
-		}
-		log.Printf("seeded built-in skill: %s", e.Name())
-	}
-	return nil
+	return skills.SeedBuiltins(filepath.Join(a.dataDir, "skills"))
 }
 
 func (a *Agent) buildSystemPrompt() (string, error) {
@@ -194,17 +163,12 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 		b.WriteString("\n\n")
 	}
 
-	skills, err := loadSkills(filepath.Join(a.dataDir, "skills"))
+	skillEntries, err := skills.Load(filepath.Join(a.dataDir, "skills"))
 	if err != nil {
 		return "", err
 	}
-	if len(skills) > 0 {
-		b.WriteString("# Skills available\n")
-		b.WriteString("You have access to the following skills. Read the corresponding file when one is relevant.\n\n")
-		for _, s := range skills {
-			fmt.Fprintf(&b, "- %s — %s (file: skills/%s)\n", s.Name, s.Description, s.File)
-		}
-		b.WriteString("\n")
+	if len(skillEntries) > 0 {
+		b.WriteString(skills.FormatSkillList(skillEntries))
 	}
 
 	if names := a.tools.SkillEnvNames(); len(names) > 0 {
@@ -238,97 +202,6 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	b.WriteString("Update USER.md when you learn lasting facts about your user.\n")
 
 	return b.String(), nil
-}
-
-type skillEntry struct {
-	Name        string
-	Description string
-	File        string
-}
-
-// loadSkills reads agentskills.io-style markdown files. We extract the optional
-// frontmatter `name` and `description` fields; if absent, we fall back to the
-// filename and the first non-empty line.
-func loadSkills(dir string) ([]skillEntry, error) {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return nil, nil
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var out []skillEntry
-	for _, e := range entries {
-		if e.IsDir() {
-			if strings.HasPrefix(e.Name(), ".") {
-				continue
-			}
-			rel := filepath.Join(e.Name(), "SKILL.md")
-			data, err := os.ReadFile(filepath.Join(dir, rel))
-			if err != nil {
-				continue
-			}
-			name, desc := parseSkillFrontmatter(string(data))
-			if name == "" {
-				name = e.Name()
-			}
-			if desc == "" {
-				desc = firstNonEmptyLine(string(data))
-			}
-			out = append(out, skillEntry{Name: name, Description: desc, File: rel})
-			continue
-		}
-		if !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
-			continue
-		}
-		full := filepath.Join(dir, e.Name())
-		data, err := os.ReadFile(full)
-		if err != nil {
-			continue
-		}
-		name, desc := parseSkillFrontmatter(string(data))
-		if name == "" {
-			name = strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		}
-		if desc == "" {
-			desc = firstNonEmptyLine(string(data))
-		}
-		out = append(out, skillEntry{Name: name, Description: desc, File: e.Name()})
-	}
-	return out, nil
-}
-
-func parseSkillFrontmatter(s string) (name, desc string) {
-	if !strings.HasPrefix(s, "---") {
-		return "", ""
-	}
-	rest := strings.TrimPrefix(s, "---")
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
-		return "", ""
-	}
-	fm := rest[:end]
-	for _, line := range strings.Split(fm, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "name:") {
-			name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
-			name = strings.Trim(name, `"'`)
-		} else if strings.HasPrefix(line, "description:") {
-			desc = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
-			desc = strings.Trim(desc, `"'`)
-		}
-	}
-	return
-}
-
-func firstNonEmptyLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") && line != "---" {
-			return line
-		}
-	}
-	return ""
 }
 
 // composeUserMessage processes attachments into a single text-only user
