@@ -4,8 +4,10 @@
 
 # Build artifacts
 /polaris
+/polaris-server
 /bin
 /dist
+/dist/
 *.exe
 *.dll
 *.so
