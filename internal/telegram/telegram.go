@@ -25,7 +25,7 @@ type Bot struct {
 	agent      *agent.Agent
 	http       *http.Client
 	allowedIDs []int64 // explicit allowlist from TELEGRAM_ALLOWED_USERS
-	ownerFile  string // path to persist auto-detected owner
+	ownerFile  string  // path to persist auto-detected owner
 }
 
 func New(token string, a *agent.Agent, allowedIDs []int64, ownerFile string) *Bot {
@@ -280,7 +280,7 @@ func (b *Bot) sendChatAction(ctx context.Context, chatID int64, action string) e
 		return err
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("sendChatAction %d", resp.StatusCode)
 	}
@@ -333,7 +333,7 @@ func (b *Bot) downloadFile(ctx context.Context, fileID string) ([]byte, string, 
 		return nil, "", err
 	}
 	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return nil, "", fmt.Errorf("getFile %d: %s", resp.StatusCode, string(body))
 	}
@@ -354,7 +354,7 @@ func (b *Bot) downloadFile(ctx context.Context, fileID string) ([]byte, string, 
 	if err != nil {
 		return nil, "", err
 	}
-	defer dresp.Body.Close()
+	defer func() { _ = dresp.Body.Close() }()
 	if dresp.StatusCode >= 400 {
 		raw, _ := io.ReadAll(dresp.Body)
 		return nil, "", fmt.Errorf("download %d: %s", dresp.StatusCode, string(raw))
@@ -393,7 +393,7 @@ func (b *Bot) getUpdates(ctx context.Context, offset, timeout int) ([]update, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("telegram %d: %s", resp.StatusCode, string(body))
@@ -431,7 +431,7 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 			return err
 		}
 		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			return fmt.Errorf("sendMessage %d: %s", resp.StatusCode, string(respBody))
 		}

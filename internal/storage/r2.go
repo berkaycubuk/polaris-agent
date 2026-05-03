@@ -98,7 +98,7 @@ func (r *R2) Put(ctx context.Context, key string, data []byte, contentType strin
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("r2 put %d: %s", resp.StatusCode, string(body))

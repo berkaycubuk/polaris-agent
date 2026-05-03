@@ -75,14 +75,14 @@ func TestLoadDirectoryLayout(t *testing.T) {
 
 func TestParseFrontmatter(t *testing.T) {
 	tests := []struct {
-		input     string
-		wantName  string
-		wantDesc  string
+		input    string
+		wantName string
+		wantDesc string
 	}{
 		{
-			input:     "---\nname: foo\ndescription: bar\n---\nbody",
-			wantName:  "foo",
-			wantDesc:  "bar",
+			input:    "---\nname: foo\ndescription: bar\n---\nbody",
+			wantName: "foo",
+			wantDesc: "bar",
 		},
 		{
 			input:    "no frontmatter here",

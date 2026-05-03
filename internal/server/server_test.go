@@ -36,7 +36,7 @@ func TestHealthz(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.handleHealth(w, req)
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
@@ -111,7 +111,7 @@ func TestChat_EmptyMessage(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.handleChat(w, req)
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
 	}
@@ -163,7 +163,7 @@ func TestChat_Integration(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer fakeLLM.Close()
 
@@ -181,7 +181,7 @@ func TestChat_Integration(t *testing.T) {
 	srv.requireAuth(srv.handleChat)(w, req)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, string(raw))
@@ -211,7 +211,7 @@ func TestChat_CreatesDataDirs(t *testing.T) {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer fakeLLM.Close()
 

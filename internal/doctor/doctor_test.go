@@ -58,7 +58,7 @@ func TestParseEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
 	content := "ONE=1\nTWO=two\n"
-	os.WriteFile(path, []byte(content), 0o644)
+	_ = os.WriteFile(path, []byte(content), 0o644)
 
 	vars := parseEnvFile(path)
 	if vars["ONE"] != "1" {
@@ -116,8 +116,8 @@ func TestCheckEnvFile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(f.Name())
-		f.Close()
+		defer func() { _ = os.Remove(f.Name()) }()
+		_ = f.Close()
 
 		r := checkEnvFile(f.Name())
 		if r.Status != "ok" {
@@ -150,7 +150,7 @@ func TestCheckRequired(t *testing.T) {
 			"LLM_BASE_URL": "https://api.openai.com/v1",
 			"LLM_MODEL":    "gpt-4o-mini",
 			"LLM_API_KEY":  "sk-test-key-12345678",
-			"AUTH_TOKEN":    "pol_test_token_here",
+			"AUTH_TOKEN":   "pol_test_token_here",
 		}
 		results := checkRequired(vars)
 		for _, r := range results {
@@ -188,7 +188,7 @@ func TestCheckRequired(t *testing.T) {
 			"LLM_BASE_URL": "https://api.openai.com/v1",
 			"LLM_MODEL":    "gpt-4o-mini",
 			"LLM_API_KEY":  "sk-long-api-key-123456",
-			"AUTH_TOKEN":    "pol-long-token-123456",
+			"AUTH_TOKEN":   "pol-long-token-123456",
 		}
 		results := checkRequired(vars)
 		for _, r := range results {
@@ -209,7 +209,7 @@ func TestCheckRequired(t *testing.T) {
 			"LLM_BASE_URL": "https://api.openai.com/v1",
 			"LLM_MODEL":    "gpt-4o-mini",
 			"LLM_API_KEY":  "x",
-			"AUTH_TOKEN":    "x",
+			"AUTH_TOKEN":   "x",
 		}
 		results := checkRequired(vars)
 		for _, r := range results {
@@ -318,8 +318,8 @@ func TestCheckGroups(t *testing.T) {
 
 	t.Run("partial R2", func(t *testing.T) {
 		results := checkGroups(map[string]string{
-			"R2_ACCOUNT_ID":   "acc",
-			"R2_BUCKET":       "bkt",
+			"R2_ACCOUNT_ID":    "acc",
+			"R2_BUCKET":        "bkt",
 			"R2_ACCESS_KEY_ID": "key",
 			// missing R2_SECRET_ACCESS_KEY
 		})
@@ -339,9 +339,9 @@ func TestCheckGroups(t *testing.T) {
 
 	t.Run("full R2", func(t *testing.T) {
 		results := checkGroups(map[string]string{
-			"R2_ACCOUNT_ID":       "acc",
-			"R2_BUCKET":           "bkt",
-			"R2_ACCESS_KEY_ID":    "key",
+			"R2_ACCOUNT_ID":        "acc",
+			"R2_BUCKET":            "bkt",
+			"R2_ACCESS_KEY_ID":     "key",
 			"R2_SECRET_ACCESS_KEY": "secret",
 		})
 		for _, r := range results {
@@ -422,7 +422,7 @@ func TestCheckLLMConnectivity_Unauthorized(t *testing.T) {
 func TestCheckLLMConnectivity_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
-		w.Write([]byte("internal error"))
+		_, _ = w.Write([]byte("internal error"))
 	}))
 	defer server.Close()
 
@@ -481,7 +481,7 @@ func TestCheckLLMConnectivity_TrailingSlash(t *testing.T) {
 	defer server.Close()
 
 	vars := map[string]string{
-		"LLM_BASE_URL": server.URL + "/",  // trailing slash
+		"LLM_BASE_URL": server.URL + "/", // trailing slash
 		"LLM_MODEL":    "test",
 		"LLM_API_KEY":  "key",
 	}
@@ -670,7 +670,7 @@ LLM_MODEL=gpt-4o-mini
 LLM_API_KEY=sk-test-key
 AUTH_TOKEN=pol_a_very_long_token_for_testing_purposes
 `
-	os.WriteFile(envPath, []byte(content), 0o600)
+	_ = os.WriteFile(envPath, []byte(content), 0o600)
 
 	// Mock Docker check
 	orig := execLookPath
@@ -729,7 +729,7 @@ func TestRun_Integration_PartialConfig(t *testing.T) {
 IMAGE_CAPTION_BASE_URL=https://example.com
 AUTH_TOKEN=change-me
 `
-	os.WriteFile(envPath, []byte(content), 0o600)
+	_ = os.WriteFile(envPath, []byte(content), 0o600)
 
 	orig := execLookPath
 	execLookPath = func(name string) (string, error) { return "/usr/bin/docker", nil }

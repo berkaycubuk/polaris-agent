@@ -147,8 +147,8 @@ func TestWriteFile(t *testing.T) {
 func TestWriteFile_Overwrite(t *testing.T) {
 	dir := t.TempDir()
 	r := NewRegistry(dir)
-	r.Run(context.Background(), "write_file", `{"path":"f.txt","content":"old"}`)
-	r.Run(context.Background(), "write_file", `{"path":"f.txt","content":"new"}`)
+	r.Run(context.Background(), "write_file", `{"path":"f.txt","content":"old"}`) //nolint:errcheck
+	r.Run(context.Background(), "write_file", `{"path":"f.txt","content":"new"}`) //nolint:errcheck
 	data, _ := os.ReadFile(filepath.Join(dir, "f.txt"))
 	if string(data) != "new" {
 		t.Fatalf("expected overwrite, got %q", string(data))

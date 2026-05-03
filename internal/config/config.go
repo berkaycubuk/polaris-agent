@@ -179,7 +179,7 @@ func loadDotEnv(path string) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
@@ -194,7 +194,7 @@ func loadDotEnv(path string) {
 		v := strings.TrimSpace(line[eq+1:])
 		v = strings.Trim(v, `"'`)
 		if _, exists := os.LookupEnv(k); !exists {
-			os.Setenv(k, v)
+			_ = os.Setenv(k, v)
 		}
 	}
 }

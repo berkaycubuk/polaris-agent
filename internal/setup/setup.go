@@ -191,23 +191,23 @@ func Run(envPath string) error {
 
 	var env strings.Builder
 	env.WriteString("# --- Main LLM (the agent's brain) ---\n")
-	env.WriteString(fmt.Sprintf("LLM_BASE_URL=%s\n", baseURL))
-	env.WriteString(fmt.Sprintf("LLM_MODEL=%s\n", model))
-	env.WriteString(fmt.Sprintf("LLM_API_KEY=%s\n", apiKey))
+	fmt.Fprintf(&env, "LLM_BASE_URL=%s\n", baseURL)
+	fmt.Fprintf(&env, "LLM_MODEL=%s\n", model)
+	fmt.Fprintf(&env, "LLM_API_KEY=%s\n", apiKey)
 	env.WriteString("\n")
-	env.WriteString(fmt.Sprintf("# --- Auth ---\n"))
-	env.WriteString(fmt.Sprintf("AUTH_TOKEN=%s\n", existingToken))
+	env.WriteString("# --- Auth ---\n")
+	fmt.Fprintf(&env, "AUTH_TOKEN=%s\n", existingToken)
 
 	if telegramToken != "" {
 		env.WriteString("\n# --- Telegram ---\n")
-		env.WriteString(fmt.Sprintf("TELEGRAM_BOT_TOKEN=%s\n", telegramToken))
+		fmt.Fprintf(&env, "TELEGRAM_BOT_TOKEN=%s\n", telegramToken)
 	}
 
 	if captionBaseURL != "" {
 		env.WriteString("\n# --- Image captioner ---\n")
-		env.WriteString(fmt.Sprintf("IMAGE_CAPTION_BASE_URL=%s\n", captionBaseURL))
-		env.WriteString(fmt.Sprintf("IMAGE_CAPTION_MODEL=%s\n", captionModel))
-		env.WriteString(fmt.Sprintf("IMAGE_CAPTION_API_KEY=%s\n", captionAPIKey))
+		fmt.Fprintf(&env, "IMAGE_CAPTION_BASE_URL=%s\n", captionBaseURL)
+		fmt.Fprintf(&env, "IMAGE_CAPTION_MODEL=%s\n", captionModel)
+		fmt.Fprintf(&env, "IMAGE_CAPTION_API_KEY=%s\n", captionAPIKey)
 	}
 
 	env.WriteString("\n")

@@ -12,7 +12,7 @@ func TestLoad_MissingRequired(t *testing.T) {
 		"IMAGE_CAPTION_BASE_URL", "IMAGE_CAPTION_MODEL", "IMAGE_CAPTION_API_KEY",
 		"R2_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
 	} {
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 
 	_, err := Load()
@@ -214,7 +214,6 @@ func TestR2Enabled_Partial(t *testing.T) {
 
 func TestGetenvInt_Invalid(t *testing.T) {
 	t.Setenv("TEST_BAD_INT", "notanumber")
-	defer os.Unsetenv("TEST_BAD_INT")
 	if got := getenvInt("TEST_BAD_INT", 42); got != 42 {
 		t.Fatalf("expected fallback 42, got %d", got)
 	}
@@ -222,7 +221,6 @@ func TestGetenvInt_Invalid(t *testing.T) {
 
 func TestGetenvInt_Zero(t *testing.T) {
 	t.Setenv("TEST_ZERO_INT", "0")
-	defer os.Unsetenv("TEST_ZERO_INT")
 	if got := getenvInt("TEST_ZERO_INT", 42); got != 42 {
 		t.Fatalf("zero should use fallback, got %d", got)
 	}
@@ -230,7 +228,6 @@ func TestGetenvInt_Zero(t *testing.T) {
 
 func TestGetenvInt_Negative(t *testing.T) {
 	t.Setenv("TEST_NEG_INT", "-5")
-	defer os.Unsetenv("TEST_NEG_INT")
 	if got := getenvInt("TEST_NEG_INT", 42); got != 42 {
 		t.Fatalf("negative should use fallback, got %d", got)
 	}
@@ -243,13 +240,15 @@ func TestLoadDotEnv(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Unsetenv("DOT_ENV_TEST_VAR")
-	defer os.Unsetenv("DOT_ENV_OTHER")
+	t.Setenv("DOT_ENV_TEST_VAR", "")
+	_ = os.Unsetenv("DOT_ENV_TEST_VAR")
+	t.Setenv("DOT_ENV_OTHER", "")
+	_ = os.Unsetenv("DOT_ENV_OTHER")
 
 	// Change working dir so .env is found
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	_ = os.Chdir(dir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	loadDotEnv(".env")
 	if os.Getenv("DOT_ENV_TEST_VAR") != "from_dotenv" {
@@ -262,8 +261,7 @@ func TestLoadDotEnv(t *testing.T) {
 
 func TestLoadDotEnv_DoesNotOverride(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("DOT_NO_OVERRIDE", "original")
-	defer os.Unsetenv("DOT_NO_OVERRIDE")
+	t.Setenv("DOT_NO_OVERRIDE", "original")
 
 	envFile := dir + "/.env"
 	if err := os.WriteFile(envFile, []byte("DOT_NO_OVERRIDE=from_file\n"), 0o644); err != nil {
@@ -271,8 +269,8 @@ func TestLoadDotEnv_DoesNotOverride(t *testing.T) {
 	}
 
 	origDir, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origDir)
+	_ = os.Chdir(dir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	loadDotEnv(".env")
 	if os.Getenv("DOT_NO_OVERRIDE") != "original" {
@@ -303,7 +301,10 @@ func TestValidateGroup(t *testing.T) {
 
 // helpers
 
-func contains(s, sub string) bool { return len(s) >= len(sub) && (s == sub || len(sub) == 0 || containsSub(s, sub)) }
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || containsSub(s, sub))
+}
+
 func containsSub(s, sub string) bool {
 	for i := 0; i <= len(s)-len(sub); i++ {
 		if s[i:i+len(sub)] == sub {
@@ -323,6 +324,6 @@ func setEnv(t *testing.T, pairs ...string) {
 func unsetAll(t *testing.T, keys ...string) {
 	t.Helper()
 	for _, k := range keys {
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 }

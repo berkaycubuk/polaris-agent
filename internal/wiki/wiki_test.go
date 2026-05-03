@@ -89,8 +89,8 @@ func TestLoadChunks_EmptyDir(t *testing.T) {
 
 func TestLoadChunks_SkipsNonMarkdown(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("not markdown"), 0o644)
-	os.WriteFile(filepath.Join(dir, "data.json"), []byte("{}"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("not markdown"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "data.json"), []byte("{}"), 0o644)
 	chunks, err := loadChunks(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestLoadChunks_SkipsNonMarkdown(t *testing.T) {
 func TestLoadChunks_ReadsMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	content := "# Hello\n\nThis is a test page about deployment.\n\n## Section\n\nMore content here."
-	os.WriteFile(filepath.Join(dir, "test.md"), []byte(content), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "test.md"), []byte(content), 0o644)
 	chunks, err := loadChunks(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestLoadChunks_ReadsMarkdown(t *testing.T) {
 
 func TestSearch_NoResults(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("unrelated content"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "doc.md"), []byte("unrelated content"), 0o644)
 	results, err := Search(dir, "deployment", 3)
 	if err != nil {
 		t.Fatal(err)
@@ -133,8 +133,8 @@ func TestSearch_NoResults(t *testing.T) {
 
 func TestSearch_FindsRelevant(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "deploy.md"), []byte("# Deployment\n\nHow to deploy the application to production servers."), 0o644)
-	os.WriteFile(filepath.Join(dir, "cooking.md"), []byte("# Cooking\n\nHow to bake a chocolate cake with frosting."), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "deploy.md"), []byte("# Deployment\n\nHow to deploy the application to production servers."), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "cooking.md"), []byte("# Cooking\n\nHow to bake a chocolate cake with frosting."), 0o644)
 
 	results, err := Search(dir, "deploy production", 3)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestSearch_TopK(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 5; i++ {
 		content := strings.Repeat("deployment deployment deployment ", 20)
-		os.WriteFile(filepath.Join(dir, string(rune('a'+i))+".md"), []byte(content), 0o644)
+		_ = os.WriteFile(filepath.Join(dir, string(rune('a'+i))+".md"), []byte(content), 0o644)
 	}
 	results, err := Search(dir, "deployment", 2)
 	if err != nil {
@@ -168,7 +168,7 @@ func TestSearch_TopK(t *testing.T) {
 
 func TestSearch_EmptyQuery(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("content"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "doc.md"), []byte("content"), 0o644)
 	results, err := Search(dir, "", 3)
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +180,7 @@ func TestSearch_EmptyQuery(t *testing.T) {
 
 func TestSearch_StopwordsOnly(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "doc.md"), []byte("the a an is are"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "doc.md"), []byte("the a an is are"), 0o644)
 	results, err := Search(dir, "the a an", 3)
 	if err != nil {
 		t.Fatal(err)

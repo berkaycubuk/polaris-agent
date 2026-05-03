@@ -26,21 +26,21 @@ func feedStdin(t *testing.T, input string, f func()) string {
 
 	done := make(chan struct{})
 	go func() {
-		sinW.WriteString(input)
-		sinW.Close()
+		sinW.WriteString(input) //nolint:errcheck
+		_ = sinW.Close()
 		close(done)
 	}()
 
 	f()
 
-	soutW.Close()
+	_ = soutW.Close()
 	var buf bytes.Buffer
-	buf.ReadFrom(soutR)
-	soutR.Close()
+	_, _ = buf.ReadFrom(soutR)
+	_ = soutR.Close()
 
 	os.Stdout = oldStdout
 	os.Stdin = oldStdin
-	sinR.Close()
+	_ = sinR.Close()
 	<-done
 
 	return buf.String()
@@ -209,7 +209,7 @@ func TestGenerateToken_Format(t *testing.T) {
 		t.Errorf("length = %d, want 52", len(token))
 	}
 	for _, c := range token[4:] {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if c < '0' || (c > '9' && c < 'a') || c > 'f' {
 			t.Errorf("unexpected char %q in hex portion", c)
 			break
 		}
@@ -402,7 +402,7 @@ func TestRun_PreservesExistingToken(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
 
-	os.WriteFile(envPath, []byte("LLM_BASE_URL=https://existing.com\nLLM_API_KEY=existing-key\nAUTH_TOKEN=pol_existing_good_token\n"), 0o600)
+	_ = os.WriteFile(envPath, []byte("LLM_BASE_URL=https://existing.com\nLLM_API_KEY=existing-key\nAUTH_TOKEN=pol_existing_good_token\n"), 0o600)
 
 	output := feedStdin(t, "1\n1\n\nn\nn\n", func() {
 		err := Run(envPath)

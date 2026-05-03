@@ -53,10 +53,10 @@ func Run(ctx context.Context, envPath string, verbose bool) []CheckResult {
 
 // PrintResults formats and writes check results to w.
 func PrintResults(w io.Writer, results []CheckResult) {
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "  Polaris Agent — Diagnostics")
-	fmt.Fprintln(w, "  ─────────────────────────────────")
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "  Polaris Agent — Diagnostics")
+	_, _ = fmt.Fprintln(w, "  ─────────────────────────────────")
+	_, _ = fmt.Fprintln(w)
 
 	for _, r := range results {
 		icon := "✓"
@@ -66,7 +66,7 @@ func PrintResults(w io.Writer, results []CheckResult) {
 		case "fail":
 			icon = "✗"
 		}
-		fmt.Fprintf(w, "  %s %-30s %s\n", icon, r.Name, r.Detail)
+		_, _ = fmt.Fprintf(w, "  %s %-30s %s\n", icon, r.Name, r.Detail)
 	}
 
 	// Summary
@@ -81,20 +81,20 @@ func PrintResults(w io.Writer, results []CheckResult) {
 			fails++
 		}
 	}
-	fmt.Fprintln(w)
-	fmt.Fprintf(w, "  %d passed, %d warnings, %d failures\n", ok, warns, fails)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "  %d passed, %d warnings, %d failures\n", ok, warns, fails)
 
 	if fails > 0 {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  Fix errors above, then re-run: polaris doctor")
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, "  Fix errors above, then re-run: polaris doctor")
 	} else if warns > 0 {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  Agent should work, but consider addressing warnings above.")
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, "  Agent should work, but consider addressing warnings above.")
 	} else {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "  All checks passed! Start your agent: docker compose up -d")
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintln(w, "  All checks passed! Start your agent: docker compose up -d")
 	}
-	fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w)
 }
 
 // --- Individual checks ---
@@ -222,7 +222,7 @@ func checkLLMConnectivity(ctx context.Context, vars map[string]string, verbose b
 			Detail: fmt.Sprintf("network error: %v", err),
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return CheckResult{
@@ -325,7 +325,7 @@ func parseEnvFile(path string) map[string]string {
 	if err != nil {
 		return vars
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return parseEnvFileFromReader(f)
 }
 

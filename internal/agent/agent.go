@@ -177,7 +177,7 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	}
 
 	b.WriteString("# Working notes\n")
-	b.WriteString(fmt.Sprintf("Data directory: %s\n", a.dataDir))
+	fmt.Fprintf(&b, "Data directory: %s\n", a.dataDir)
 	b.WriteString("Use search_wiki before answering from memory; write new knowledge into wiki/<topic>.md.\n")
 	b.WriteString("Update USER.md when you learn lasting facts about your user.\n")
 
