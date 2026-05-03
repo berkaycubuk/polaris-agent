@@ -315,8 +315,8 @@ func TestRun_OllamaProvider(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
 
-	// provider=5(Ollama), model=1(llama3), telegram=n, image=n
-	feedStdin(t, "5\n1\nn\nn\n", func() {
+	// provider=6(Ollama), model=1(llama3), telegram=n, image=n
+	feedStdin(t, "6\n1\nn\nn\n", func() {
 		err := Run(envPath)
 		if err != nil {
 			t.Fatalf("Run error: %v", err)
@@ -338,8 +338,8 @@ func TestRun_CustomEndpoint(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
 
-	// provider=6(Custom), base_url, model, api-key, telegram=n, image=n
-	feedStdin(t, "6\nhttps://my-llm.example.com/v1\nmy-model-v2\nsk-custom-key\nn\nn\n", func() {
+	// provider=7(Custom), base_url, model, api-key, telegram=n, image=n
+	feedStdin(t, "7\nhttps://my-llm.example.com/v1\nmy-model-v2\nsk-custom-key\nn\nn\n", func() {
 		err := Run(envPath)
 		if err != nil {
 			t.Fatalf("Run error: %v", err)

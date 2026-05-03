@@ -39,6 +39,11 @@ var Providers = []struct {
 		Models:  []string{"llama-3.3-70b-versatile", "llama-3.1-8b-instant"},
 	},
 	{
+		Name:    "Z.AI",
+		BaseURL: "https://api.z.ai/api/paas/v4",
+		Models:  []string{"glm-4.6", "glm-4.5-air", "glm-4.5", "glm-5-turbo"},
+	},
+	{
 		Name:    "Ollama (local)",
 		BaseURL: "http://localhost:11434/v1",
 		Models:  []string{"llama3", "mistral", "qwen2"},
@@ -108,8 +113,9 @@ func Run(envPath string) error {
 			for i, m := range provider.Models {
 				fmt.Printf("    %d) %s\n", i+1, m)
 			}
+			fmt.Println("    0) other (type a model name)")
 			fmt.Println()
-			choice := promptInt(reader, "  Choose a model (or 0 to type manually)", 1, len(provider.Models))
+			choice := promptInt(reader, "  Choose a model", 0, len(provider.Models))
 			if choice == 0 {
 				model = promptString(reader, "  Model name", existingVars["LLM_MODEL"])
 			} else {
