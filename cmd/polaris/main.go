@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/berkaycubuk/polaris-agent/internal/chat"
 	"github.com/berkaycubuk/polaris-agent/internal/doctor"
 	"github.com/berkaycubuk/polaris-agent/internal/setup"
 )
@@ -38,6 +39,30 @@ func main() {
 				os.Exit(1)
 			}
 		}
+	case "chat":
+		opts := chat.LoadChatOpts(envPath())
+		// Allow CLI flags to override
+		for i := 2; i < len(os.Args); i++ {
+			switch {
+			case os.Args[i] == "--server" && i+1 < len(os.Args):
+				opts.ServerURL = os.Args[i+1]
+				i++
+			case os.Args[i] == "--session" && i+1 < len(os.Args):
+				opts.Session = os.Args[i+1]
+				i++
+			case os.Args[i] == "--token" && i+1 < len(os.Args):
+				opts.AuthToken = os.Args[i+1]
+				i++
+			}
+		}
+		if opts.AuthToken == "" {
+			fmt.Fprintln(os.Stderr, "error: AUTH_TOKEN not set — run: polaris setup")
+			os.Exit(1)
+		}
+		if err := chat.Run(opts); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	case "help", "-h", "--help":
 		printUsage()
 	case "version", "-V", "--version":
@@ -62,10 +87,16 @@ func printUsage() {
 	fmt.Println("polaris — personal AI companion CLI")
 	fmt.Println()
 	fmt.Println("Usage:")
+	fmt.Println("  polaris chat      Chat with your agent (interactive)")
 	fmt.Println("  polaris setup     Configure the agent (interactive wizard)")
 	fmt.Println("  polaris doctor    Diagnose configuration issues")
 	fmt.Println("  polaris version   Show version")
 	fmt.Println("  polaris help      Show this help message")
+	fmt.Println()
+	fmt.Println("Chat options:")
+	fmt.Println("  --server <url>    Server URL (default: http://localhost:8080)")
+	fmt.Println("  --session <id>    Session ID (default: cli)")
+	fmt.Println("  --token <token>   Auth token (reads from .env by default)")
 	fmt.Println()
 	fmt.Println("The agent server runs inside Docker:")
 	fmt.Println("  docker compose up -d    Start the agent")

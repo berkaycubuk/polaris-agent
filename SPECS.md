@@ -199,7 +199,7 @@ On each new session, the system prompt is built from:
 Two binaries built from the same Go module:
 
 - **`polaris`** (`cmd/polaris/`) — CLI tool, runs on the host machine.
-  Handles `setup`, `doctor`, `help`, `version` commands.
+  Handles `setup`, `doctor`, `chat`, `help`, `version` commands.
   Installed via `go install` or as a standalone binary.
 
 - **`polaris-server`** (`cmd/server/`) — Agent server, runs inside Docker.
@@ -215,6 +215,7 @@ internal/
 ├── agent/                 — core agent loop (chat, tool calling, system prompt)
 ├── attachment/            — image processing pipeline (caption + R2 upload)
 ├── captioner/             — vision model captioning
+├── chat/                  — interactive terminal chat client (used by CLI)
 ├── config/                — env loading, validation, .env parsing
 ├── doctor/                — diagnostic checks (used by CLI)
 ├── llm/                   — OpenAI-compatible chat completions client

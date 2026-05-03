@@ -326,7 +326,7 @@ func parseEnvFile(path string) map[string]string {
 		return vars
 	}
 	defer func() { _ = f.Close() }()
-	return parseEnvFileFromReader(f)
+	return ParseEnvFileFromReader(f)
 }
 
 func maskKey(key string) string {
@@ -361,8 +361,8 @@ var dockerPing = func(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// parseEnvFileFromReader is exported for testing.
-func parseEnvFileFromReader(r io.Reader) map[string]string {
+// ParseEnvFileFromReader parses env vars from an io.Reader.
+func ParseEnvFileFromReader(r io.Reader) map[string]string {
 	vars := map[string]string{}
 	s := bufio.NewScanner(r)
 	for s.Scan() {

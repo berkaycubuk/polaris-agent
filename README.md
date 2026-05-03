@@ -41,6 +41,12 @@ curl -s localhost:8080/chat \
   -d '{"session":"me","message":"hello"}'
 ```
 
+Or use the built-in chat interface:
+
+```bash
+polaris chat
+```
+
 Reset a session:
 
 ```bash
@@ -57,6 +63,7 @@ To enable Telegram, set `TELEGRAM_BOT_TOKEN` in `.env`.
 The `polaris` CLI runs on your machine and manages configuration:
 
 ```
+polaris chat      Chat with your agent (interactive)
 polaris setup     Configure the agent (interactive wizard)
 polaris doctor    Diagnose configuration issues
 polaris version   Show version
@@ -69,6 +76,22 @@ The agent server runs inside Docker:
 docker compose up -d      # start the agent
 docker compose logs -f    # view logs
 docker compose down        # stop the agent
+```
+
+### Chat options
+
+```
+--server <url>    Server URL (default: http://localhost:8080)
+--session <id>    Session ID (default: cli)
+--token <token>   Auth token (reads from .env by default)
+```
+
+Chat commands (inside the chat):
+
+```
+/reset   Clear session history
+/quit    Exit the chat
+/help    Show available commands
 ```
 
 ## Data layout

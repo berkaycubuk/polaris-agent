@@ -12,11 +12,11 @@ import (
 	"testing"
 )
 
-// --- parseEnvFileFromReader edge cases ---
+// --- ParseEnvFileFromReader edge cases ---
 
 func TestParseEnvFileFromReader_CommentsAndBlanks(t *testing.T) {
 	input := "# top comment\n\n  # indented comment\nKEY=val\n\n"
-	vars := parseEnvFileFromReader(strings.NewReader(input))
+	vars := ParseEnvFileFromReader(strings.NewReader(input))
 	if vars["KEY"] != "val" {
 		t.Errorf("KEY = %q, want %q", vars["KEY"], "val")
 	}
@@ -27,7 +27,7 @@ func TestParseEnvFileFromReader_CommentsAndBlanks(t *testing.T) {
 
 func TestParseEnvFileFromReader_NoEquals(t *testing.T) {
 	input := "NOEQUALS\nKEY=val\n"
-	vars := parseEnvFileFromReader(strings.NewReader(input))
+	vars := ParseEnvFileFromReader(strings.NewReader(input))
 	if _, ok := vars["NOEQUALS"]; ok {
 		t.Error("lines without '=' should be skipped")
 	}
@@ -38,7 +38,7 @@ func TestParseEnvFileFromReader_NoEquals(t *testing.T) {
 
 func TestParseEnvFileFromReader_EqualsInValue(t *testing.T) {
 	input := "KEY=val=with=equals\n"
-	vars := parseEnvFileFromReader(strings.NewReader(input))
+	vars := ParseEnvFileFromReader(strings.NewReader(input))
 	if vars["KEY"] != "val=with=equals" {
 		t.Errorf("KEY = %q, want %q", vars["KEY"], "val=with=equals")
 	}
@@ -46,7 +46,7 @@ func TestParseEnvFileFromReader_EqualsInValue(t *testing.T) {
 
 func TestParseEnvFileFromReader_SpacesAroundEquals(t *testing.T) {
 	input := "  KEY  =  value  \n"
-	vars := parseEnvFileFromReader(strings.NewReader(input))
+	vars := ParseEnvFileFromReader(strings.NewReader(input))
 	if vars["KEY"] != "value" {
 		t.Errorf("KEY = %q, want %q", vars["KEY"], "value")
 	}
