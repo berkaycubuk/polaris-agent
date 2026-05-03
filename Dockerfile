@@ -3,7 +3,7 @@ WORKDIR /src
 COPY go.mod ./
 RUN go mod download || true
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/polaris ./cmd/polaris
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/polaris ./cmd/server
 
 FROM alpine:3.20
 RUN apk add --no-cache bash ca-certificates curl git python3 \

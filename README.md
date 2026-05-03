@@ -1,16 +1,35 @@
 # Polaris Agent
 
-A personal AI companion that improves and adapts to its user. Single Go binary,
-sandboxed in Docker, configured via `.env`. Knowledge persists as markdown.
+A personal AI companion that improves and adapts to its user.
+Runs inside Docker for security. Knowledge persists as markdown.
 
 See `SPECS.md` for the full design.
+
+## Requirements
+
+- [Docker](https://docs.docker.com/get-docker/) with Docker Compose
+- [Go](https://go.dev/dl/) 1.24+ (to build the CLI from source)
 
 ## Quick start
 
 ```bash
-cp .env.example .env
-# edit .env (LLM_*, AUTH_TOKEN)
-docker compose up --build
+git clone https://github.com/berkaycubuk/polaris-agent.git
+cd polaris-agent
+
+# Build and install the CLI
+go install ./cmd/polaris
+
+# Configure the agent
+polaris setup
+
+# Start the agent server (Docker)
+docker compose up -d
+```
+
+**Diagnose issues:**
+
+```bash
+polaris doctor
 ```
 
 Talk to it over HTTP:
@@ -32,6 +51,25 @@ curl -s -X POST localhost:8080/reset \
 ```
 
 To enable Telegram, set `TELEGRAM_BOT_TOKEN` in `.env`.
+
+## CLI commands
+
+The `polaris` CLI runs on your machine and manages configuration:
+
+```
+polaris setup     Configure the agent (interactive wizard)
+polaris doctor    Diagnose configuration issues
+polaris version   Show version
+polaris help      Show help
+```
+
+The agent server runs inside Docker:
+
+```bash
+docker compose up -d      # start the agent
+docker compose logs -f    # view logs
+docker compose down        # stop the agent
+```
 
 ## Data layout
 

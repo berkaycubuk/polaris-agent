@@ -3,68 +3,227 @@
 ## Overview
 
 Polaris Agent is a personal AI companion that improves and adapts to its
-user. It has a personality and memories.
+user over time. It has a personality, memories, and a growing knowledge base.
 
-It supports OpenAI compatible LLM providers.
+It supports any OpenAI-compatible chat-completions endpoint (OpenAI, Gemini,
+Anthropic-compat, Groq, OpenRouter, local Ollama, etc.).
 
-It is configured with .env file.
+Configured via `.env` file. Single Go binary, sandboxed in Docker.
+
+## Interfaces
+
+### HTTP API
+
+Runs on port 8080 (configurable via `HTTP_ADDR`). All endpoints except
+`/healthz` require a `Bearer` token via the `Authorization` header
+(matched against `AUTH_TOKEN` using constant-time comparison).
 
 ```
-LLM_BASE_URL=...
-LLM_MODEL=....
-LLM_API_KEY=sk-.....
-
-TELEGRAM_BOT_TOKEN=.... # optional, add it to enable Telegram
-
-AUTH_TOKEN=.... # user fills it, used for authentication
+POST /chat   — send a message, get a reply
+POST /reset  — clear session history
+GET  /healthz — unauthenticated health check
 ```
 
-`USER.md` file stores user preferences, communication style.
-`SOUL.md` file stores the agent's core identity and is injected
-at top in the system prompt.
-Rest of the collected data and knowledge stored with llm wiki principle.
-LLM Wiki is defined here: https://gist.githubusercontent.com/karpathy/442a6bf555914893e9891c11519de94f/raw/ac46de1ad27f92b28ac95459c782c07f6b8c964a/llm-wiki.md
+Request body for `/chat`:
+```json
+{"session": "me", "message": "hello"}
+```
 
-All data (USER.md, SOUL.md, wiki, skills) stored in `/app/data`. This directory must be mounted as a
-Docker volume.
+### Telegram (optional)
 
-Agent can develop it's own skills as it sees a need, or the user can
-ask the agent to load a skill from publicly available source.
+Enabled by setting `TELEGRAM_BOT_TOKEN`. Supports text and image messages.
 
-Skills are stored as standard markdown files in /app/data/skills/.
-Skill standards are defined here: https://agentskills.io/
+**Access control:**
+- If `TELEGRAM_ALLOWED_USERS` is set (comma-separated chat IDs), only those
+  users can interact with the bot.
+- If not set, the **first person to message the bot is auto-claimed as the
+  owner**. Their chat ID is persisted to `/app/data/.telegram-owner` and
+  survives restarts. All other users are blocked.
+- To reset ownership, delete `.telegram-owner` from the data volume and
+  restart.
 
-Tools built-in to the agent:
+### Image understanding (optional)
+
+A separate vision model (e.g. gemini-2.5-flash-lite) captions image
+attachments. Only the text caption enters session history — image bytes
+never do. Requires all three `IMAGE_CAPTION_*` env vars.
+
+Original images can optionally be uploaded to Cloudflare R2 for long-term
+storage. Requires all four `R2_*` env vars (plus optional `R2_PUBLIC_BASE_URL`).
+
+## Configuration
+
+All config via environment variables (loaded from `.env` if present).
+Env vars already set in the environment take precedence over `.env`.
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `LLM_BASE_URL` | OpenAI-compatible chat-completions endpoint |
+| `LLM_MODEL` | Model name (e.g. `gpt-4o-mini`) |
+| `LLM_API_KEY` | API key for the LLM provider |
+| `AUTH_TOKEN` | Bearer token for HTTP API authentication |
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATA_DIR` | `/app/data` | Root directory for all persistent data |
+| `HTTP_ADDR` | `:8080` | HTTP listen address |
+| `MAX_TOOL_ITERATIONS` | `30` | Max tool calls per turn before giving up |
+| `TELEGRAM_BOT_TOKEN` | _(empty)_ | Enables Telegram interface when set |
+| `TELEGRAM_ALLOWED_USERS` | _(empty)_ | Comma-separated allowed Telegram chat IDs (see access control above) |
+| `IMAGE_CAPTION_BASE_URL` | _(empty)_ | Vision model endpoint (set all 3 or none) |
+| `IMAGE_CAPTION_MODEL` | _(empty)_ | Vision model name |
+| `IMAGE_CAPTION_API_KEY` | _(empty)_ | Vision model API key |
+| `R2_ACCOUNT_ID` | _(empty)_ | Cloudflare R2 account (set all 4 or none) |
+| `R2_BUCKET` | _(empty)_ | R2 bucket name |
+| `R2_ACCESS_KEY_ID` | _(empty)_ | R2 access key |
+| `R2_SECRET_ACCESS_KEY` | _(empty)_ | R2 secret key |
+| `R2_PUBLIC_BASE_URL` | _(empty)_ | Public URL base for R2 objects |
+
+Related variable groups (`IMAGE_CAPTION_*`, `R2_*`) must be either all set
+or all empty. Partial configuration is a startup error.
+
+## Data layout
+
+All persistent state lives in `DATA_DIR` (mounted as a Docker volume at
+`/app/data` in production):
+
+```
+/app/data/
+├── SOUL.md              — agent identity, injected at top of system prompt
+├── USER.md              — user preferences and communication style
+├── .telegram-owner      — auto-detected Telegram owner chat ID
+├── wiki/                — agent-grown knowledge base (markdown files)
+├── skills/              — agent skills (markdown + optional scripts)
+└── secrets/             — user-provided secret files (redacted from output)
+```
+
+### SOUL.md
+
+Stores the agent's core identity and personality. Injected at the top of
+the system prompt. If missing, a built-in default personality is used.
+
+### USER.md
+
+Stores lasting facts about the user — preferences, communication style,
+recurring topics. The agent updates this as it learns.
+
+### Wiki
+
+Knowledge stored as markdown files following the LLM Wiki principle
+(https://gist.githubusercontent.com/karpathy/442a6bf555914893e9891c11519de94f/raw/ac46de1ad27f92b28ac95459c782c07f6b8c964a/llm-wiki.md).
+
+Files are chunked (~500 tokens ≈ ~2000 chars) at paragraph boundaries.
+Search uses TF-IDF scoring with stopword filtering. The `search_wiki` tool
+returns the top 3 most relevant chunks. No external vector databases.
+
+### Skills
+
+Skills follow the agentskills.io standard. Stored as markdown files in
+`skills/`. Skills can be flat files (`skills/foo.md`) or directories
+(`skills/foo/SKILL.md`) when they need executable scripts.
+
+The agent can develop its own skills or the user can ask it to load one.
+Built-in skills (like `skill-builder.md`) are seeded on first run and not
+overwritten if the user edits them.
+
+Scripts use `uv` (https://docs.astral.sh/uv) for Python dependency
+management with a shared global cache.
+
+### Secrets
+
+Files placed under `secrets/` are available to skill scripts at runtime.
+Their contents are automatically redacted from all tool output before it
+reaches the LLM, preventing accidental leaks.
+
+## Built-in tools
 
 ### read_file
 
-Allows the agent to read file contents.
+Read file contents. Paths are relative to the data directory. Path traversal
+is blocked — paths escaping the data dir are rejected.
 
 ### write_file
 
-Allows the agent to write to files.
+Create or overwrite a file. Same path restrictions as `read_file`.
 
 ### bash
 
-Allows the agent to execute bash commands.
+Execute a shell command inside the container. Runs from the data directory.
+Configurable timeout (default 30s, max 300s). Tool output is redacted to
+strip any known secret values before returning to the LLM.
 
 ### search_wiki
 
-Allows the agent to search it's wiki knowledge base. Fetches top 3 relevant
-results. Implementation: split wiki markdown files into chunks (~500 tokens).
-Uses basic keyword matching to find and return the 3 most relevant
-chunks. Do NOT use external vector databases.
+Search the wiki knowledge base. Returns top 3 most relevant chunks using
+TF-IDF scoring.
 
-Authentication is handled via `AUTH_TOKEN` env variable. User have to
-rotate the token himself to secure the agent.
+## Secret redaction
 
-## Use cases
+The agent runs a secret redaction system to prevent the LLM from echoing
+sensitive values:
 
-Users use this agent to take notes, do researches and tinker on ideas.
-Agent will learn more about it's user over time thanks to growing llm wiki.
+- **`SKILL_*` env vars** — passed to subprocesses, redacted from output
+- **`SKILL_PUBLIC_*` env vars** — passed to subprocesses, NOT redacted
+  (for OAuth client IDs, public webhook URLs, etc.)
+- **Files under `secrets/`** — contents redacted from output
+- **Parent env vars matching secret patterns** (KEY, TOKEN, SECRET,
+  PASSWORD, etc.) — redacted from output, NOT passed to subprocesses
+
+Values under 12 characters are not redacted (too many false positives).
+Redacted values are replaced with `[REDACTED]`.
+
+## Sessions
+
+Chat histories are held in memory, keyed by session ID. Session IDs are
+arbitrary strings — the HTTP API passes them directly, Telegram uses
+`telegram:<chat_id>`. Sessions are lost on container restart.
+
+## System prompt construction
+
+On each new session, the system prompt is built from:
+
+1. `SOUL.md` (or built-in default)
+2. `USER.md` (if present)
+3. Loaded skills list (name + description + file path)
+4. Available secret/public env var names (values never included)
+5. Available secrets files
+6. Working notes (data directory path, wiki usage instructions)
+
+## Architecture
+
+```
+cmd/polaris/main.go       — entrypoint, wires everything together
+internal/
+├── agent/                 — core agent loop (chat, tool calling, system prompt)
+├── attachment/            — image processing pipeline (caption + R2 upload)
+├── captioner/             — vision model captioning
+├── config/                — env loading, validation, .env parsing
+├── llm/                   — OpenAI-compatible chat completions client
+├── server/                — HTTP API (chat, reset, healthz)
+├── session/               — in-memory session store
+├── skills/                — skill loading, parsing, built-in seeding
+├── storage/               — Cloudflare R2 uploads (S3-compatible SigV4)
+├── telegram/              — Telegram bot (long polling, auth)
+├── tools/                 — built-in tools + secret redaction
+└── wiki/                  — wiki chunking and TF-IDF search
+```
+
+The project has **zero external dependencies** — pure Go standard library.
 
 ## Tech
 
-Single Golang binary that lives inside a docker container. Uses markdown
-to store knowledge and data. Docker should sandbox the agent to secure
-the computer the agent runs.
+- Single Go binary, built inside a multi-stage Docker container
+- Alpine-based runtime image, runs as non-root user `polaris`
+- Markdown for all persistent data and knowledge
+- Docker provides sandboxing for the `bash` tool
+- No databases, no vector stores — files only
+
+## Use cases
+
+Users interact with Polaris to take notes, do research, and tinker on ideas.
+The agent learns more about its user over time thanks to the growing wiki
+and adaptive USER.md.

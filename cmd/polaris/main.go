@@ -2,96 +2,69 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"os"
-	"os/signal"
-	"path/filepath"
-	"syscall"
 
-	"github.com/berkaycubuk/polaris-agent/internal/agent"
-	"github.com/berkaycubuk/polaris-agent/internal/attachment"
-	"github.com/berkaycubuk/polaris-agent/internal/captioner"
-	"github.com/berkaycubuk/polaris-agent/internal/config"
-	"github.com/berkaycubuk/polaris-agent/internal/llm"
-	"github.com/berkaycubuk/polaris-agent/internal/server"
-	"github.com/berkaycubuk/polaris-agent/internal/storage"
-	"github.com/berkaycubuk/polaris-agent/internal/telegram"
-	"github.com/berkaycubuk/polaris-agent/internal/tools"
+	"github.com/berkaycubuk/polaris-agent/internal/doctor"
+	"github.com/berkaycubuk/polaris-agent/internal/setup"
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("config: %v", err)
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
 
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-		log.Fatalf("data dir: %v", err)
-	}
-
-	llmClient := llm.New(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
-	registry := tools.NewRegistry(cfg.DataDir)
-	if names := registry.SkillEnvNames(); len(names) > 0 {
-		log.Printf("skill secret env vars (%d): %v", len(names), names)
-	} else {
-		log.Printf("no SKILL_* (secret) env vars detected")
-	}
-	if names := registry.PublicEnvNames(); len(names) > 0 {
-		log.Printf("skill public env vars (%d): %v", len(names), names)
-	}
-	if files := registry.SecretsFiles(); len(files) > 0 {
-		log.Printf("secrets files detected (%d): %v", len(files), files)
-	}
-
-	var proc *attachment.Processor
-	{
-		var cap *captioner.Captioner
-		if cfg.ImageCaptionEnabled() {
-			capClient := llm.New(cfg.ImageCaptionBaseURL, cfg.ImageCaptionAPIKey, cfg.ImageCaptionModel)
-			cap = captioner.New(capClient)
-			log.Printf("image captioner enabled: %s @ %s", cfg.ImageCaptionModel, cfg.ImageCaptionBaseURL)
-		} else {
-			log.Printf("image captioner disabled (set IMAGE_CAPTION_* to enable)")
+	switch os.Args[1] {
+	case "setup":
+		if err := setup.Run(envPath()); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
 		}
-		var r2 *storage.R2
-		if cfg.R2Enabled() {
-			r2 = storage.New(cfg.R2AccountID, cfg.R2Bucket, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2PublicBaseURL)
-			log.Printf("r2 storage enabled: bucket=%s", cfg.R2Bucket)
-		} else {
-			log.Printf("r2 storage disabled (set R2_* to enable)")
+	case "doctor":
+		verbose := false
+		for _, arg := range os.Args[2:] {
+			if arg == "-v" || arg == "--verbose" {
+				verbose = true
+			}
 		}
-		proc = attachment.NewProcessor(cap, r2)
-	}
-	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations, Processor: proc}
-
-	a := agent.New(llmClient, registry, cfg.DataDir, opts)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	errc := make(chan error, 2)
-
-	go func() {
-		s := server.New(cfg.HTTPAddr, cfg.AuthToken, a)
-		errc <- s.Run(ctx)
-	}()
-
-	if cfg.TelegramBotToken != "" {
-		go func() {
-			ownerFile := filepath.Join(cfg.DataDir, ".telegram-owner")
-			b := telegram.New(cfg.TelegramBotToken, a, cfg.TelegramAllowedIDs, ownerFile)
-			errc <- b.Run(ctx)
-		}()
-	}
-
-	select {
-	case <-ctx.Done():
-		log.Printf("shutting down")
-	case err := <-errc:
-		if err != nil && err != context.Canceled {
-			log.Printf("subsystem exited: %v", err)
+		results := doctor.Run(context.Background(), envPath(), verbose)
+		doctor.PrintResults(os.Stdout, results)
+		for _, r := range results {
+			if r.Status == "fail" {
+				os.Exit(1)
+			}
 		}
+	case "help", "-h", "--help":
+		printUsage()
+	case "version", "-V", "--version":
+		fmt.Println("polaris dev")
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
 	}
+}
+
+// envPath determines the .env file location.
+// Priority: POLARIS_ENV > .env in current directory.
+func envPath() string {
+	if p := os.Getenv("POLARIS_ENV"); p != "" {
+		return p
+	}
+	return ".env"
+}
+
+func printUsage() {
+	fmt.Println("polaris — personal AI companion CLI")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  polaris setup     Configure the agent (interactive wizard)")
+	fmt.Println("  polaris doctor    Diagnose configuration issues")
+	fmt.Println("  polaris version   Show version")
+	fmt.Println("  polaris help      Show this help message")
+	fmt.Println()
+	fmt.Println("The agent server runs inside Docker:")
+	fmt.Println("  docker compose up -d    Start the agent")
+	fmt.Println("  docker compose logs -f  View logs")
 }
