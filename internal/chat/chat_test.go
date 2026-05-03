@@ -36,7 +36,7 @@ func TestSendMessage(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"reply": "Hi there!"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"reply": "Hi there!"})
 	}))
 	defer server.Close()
 
@@ -79,7 +79,7 @@ func TestResetSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/reset" && r.Method == http.MethodPost {
 			var req chatReq
-			json.NewDecoder(r.Body).Decode(&req)
+			_ = json.NewDecoder(r.Body).Decode(&req)
 			session = req.Session
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -104,7 +104,7 @@ func TestResetSession(t *testing.T) {
 func TestHealthCheck(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer server.Close()
 

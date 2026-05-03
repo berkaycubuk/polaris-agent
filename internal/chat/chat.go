@@ -336,12 +336,12 @@ func clearMenu(n int) {
 		return
 	}
 	// Move down 1 line (to menu start), clear n+1 lines, move back up
-	fmt.Printf("\033[%dB", 1)   // down 1
+	fmt.Printf("\033[%dB", 1) // down 1
 	for i := 0; i < n; i++ {
 		fmt.Print("\033[K\033[A") // clear line, move up
 	}
-	fmt.Print("\033[K")           // clear the last line
-	fmt.Printf("\033[%dA", 1)     // move back up to input line
+	fmt.Print("\033[K")       // clear the last line
+	fmt.Printf("\033[%dA", 1) // move back up to input line
 }
 
 func printReply(reply string) {
@@ -403,7 +403,7 @@ func healthCheck(serverURL string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check returned HTTP %d", resp.StatusCode)
 	}
@@ -431,7 +431,7 @@ func sendMessage(opts Options, message string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1MB limit
 	if err != nil {
@@ -482,7 +482,7 @@ func resetSession(opts Options) error {
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		return fmt.Errorf("unauthorized")

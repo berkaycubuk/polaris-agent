@@ -41,7 +41,7 @@ func makeRaw() (*termState, error) {
 
 func restore(s *termState) {
 	fd := int(os.Stdin.Fd())
-	tcsetattr(fd, s)
+	_ = tcsetattr(fd, s)
 }
 
 func readRune() (rune, error) {
