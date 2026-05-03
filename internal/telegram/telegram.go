@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,13 +21,21 @@ import (
 const apiBase = "https://api.telegram.org/bot"
 
 type Bot struct {
-	token string
-	agent *agent.Agent
-	http  *http.Client
+	token      string
+	agent      *agent.Agent
+	http       *http.Client
+	allowedIDs []int64 // explicit allowlist from TELEGRAM_ALLOWED_USERS
+	ownerFile  string // path to persist auto-detected owner
 }
 
-func New(token string, a *agent.Agent) *Bot {
-	return &Bot{token: token, agent: a, http: &http.Client{Timeout: 70 * time.Second}}
+func New(token string, a *agent.Agent, allowedIDs []int64, ownerFile string) *Bot {
+	return &Bot{
+		token:      token,
+		agent:      a,
+		http:       &http.Client{Timeout: 70 * time.Second},
+		allowedIDs: allowedIDs,
+		ownerFile:  ownerFile,
+	}
 }
 
 type update struct {
@@ -80,7 +90,16 @@ type fileResponse struct {
 }
 
 func (b *Bot) Run(ctx context.Context) error {
-	log.Printf("telegram bot started")
+	if len(b.allowedIDs) > 0 {
+		log.Printf("telegram bot started (explicit allowlist: %d user(s))", len(b.allowedIDs))
+	} else {
+		owner := b.readOwner()
+		if owner != 0 {
+			log.Printf("telegram bot started (auto-detected owner: %d)", owner)
+		} else {
+			log.Printf("telegram bot started (no owner yet — first messenger will be auto-claimed)")
+		}
+	}
 	offset := 0
 	for {
 		select {
@@ -112,6 +131,13 @@ func (b *Bot) Run(ctx context.Context) error {
 
 func (b *Bot) handleMessage(ctx context.Context, m *message) {
 	chatID := m.Chat.ID
+
+	if !b.isAllowed(chatID) {
+		log.Printf("telegram: unauthorized chat_id=%d", chatID)
+		_ = b.send(ctx, chatID, "Unauthorized.")
+		return
+	}
+
 	session := "telegram:" + strconv.FormatInt(chatID, 10)
 
 	text := strings.TrimSpace(m.Text)
@@ -161,6 +187,61 @@ func (b *Bot) handleMessage(ctx context.Context, m *message) {
 	}
 	if err := b.send(ctx, chatID, reply); err != nil {
 		log.Printf("telegram send: %v", err)
+	}
+}
+
+// isAllowed checks whether chatID is authorized. If an explicit allowlist
+// is configured (TELEGRAM_ALLOWED_USERS), it takes precedence. Otherwise,
+// the first user to message the bot is auto-claimed as the owner and
+// persisted to disk so it survives restarts.
+func (b *Bot) isAllowed(chatID int64) bool {
+	// Explicit allowlist overrides auto-detect.
+	if len(b.allowedIDs) > 0 {
+		for _, id := range b.allowedIDs {
+			if id == chatID {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Auto-detect mode: check persisted owner.
+	owner := b.readOwner()
+	if owner != 0 {
+		return owner == chatID
+	}
+
+	// No owner yet — this user claims it.
+	b.writeOwner(chatID)
+	log.Printf("telegram: auto-claimed owner chat_id=%d", chatID)
+	return true
+}
+
+func (b *Bot) readOwner() int64 {
+	if b.ownerFile == "" {
+		return 0
+	}
+	data, err := os.ReadFile(b.ownerFile)
+	if err != nil {
+		return 0
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+func (b *Bot) writeOwner(id int64) {
+	if b.ownerFile == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(b.ownerFile), 0o755); err != nil {
+		log.Printf("telegram: failed to create owner dir: %v", err)
+		return
+	}
+	if err := os.WriteFile(b.ownerFile, []byte(strconv.FormatInt(id, 10)+"\n"), 0o644); err != nil {
+		log.Printf("telegram: failed to write owner file: %v", err)
 	}
 }
 

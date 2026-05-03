@@ -32,6 +32,11 @@ type Config struct {
 	R2AccessKeyID   string
 	R2SecretKey     string
 	R2PublicBaseURL string // optional even when R2 is configured
+
+	// Telegram access control. Comma-separated list of allowed chat/user IDs.
+	// When set, only messages from these IDs are processed. If empty, the
+	// bot responds to anyone (not recommended for public repos).
+	TelegramAllowedIDs []int64
 }
 
 func Load() (*Config, error) {
@@ -56,6 +61,8 @@ func Load() (*Config, error) {
 		R2AccessKeyID:   os.Getenv("R2_ACCESS_KEY_ID"),
 		R2SecretKey:     os.Getenv("R2_SECRET_ACCESS_KEY"),
 		R2PublicBaseURL: os.Getenv("R2_PUBLIC_BASE_URL"),
+
+		TelegramAllowedIDs: parseIDList(os.Getenv("TELEGRAM_ALLOWED_USERS")),
 	}
 
 	var missing []string
@@ -84,6 +91,41 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return c, nil
+}
+
+// TelegramUserAllowed reports whether a chat ID is in the allowlist.
+// Returns true when the allowlist is empty (the telegram package handles
+// auto-claim logic in that case).
+func (c *Config) TelegramUserAllowed(chatID int64) bool {
+	if len(c.TelegramAllowedIDs) == 0 {
+		return true
+	}
+	for _, id := range c.TelegramAllowedIDs {
+		if id == chatID {
+			return true
+		}
+	}
+	return false
+}
+
+// parseIDList parses a comma-separated list of numeric IDs.
+func parseIDList(s string) []int64 {
+	if s == "" {
+		return nil
+	}
+	var ids []int64
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(part, 10, 64)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // ImageCaptionEnabled reports whether the captioner is configured.

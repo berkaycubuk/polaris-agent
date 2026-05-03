@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/berkaycubuk/polaris-agent/internal/agent"
@@ -79,7 +80,8 @@ func main() {
 
 	if cfg.TelegramBotToken != "" {
 		go func() {
-			b := telegram.New(cfg.TelegramBotToken, a)
+			ownerFile := filepath.Join(cfg.DataDir, ".telegram-owner")
+			b := telegram.New(cfg.TelegramBotToken, a, cfg.TelegramAllowedIDs, ownerFile)
 			errc <- b.Run(ctx)
 		}()
 	}
