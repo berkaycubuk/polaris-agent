@@ -1,0 +1,13 @@
+services:
+  polaris:
+    build: .
+    container_name: polaris
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - polaris-data:/app/data
+
+volumes:
+  polaris-data:

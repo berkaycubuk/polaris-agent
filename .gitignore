@@ -1,0 +1,44 @@
+# Environment
+.env
+.env.local
+*.env
+
+# Build artifacts
+/polaris
+/bin
+/dist
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Data
+/data
+*.db
+*.sqlite
+*.sqlite3
+
+# Test
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go
+vendor/
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
