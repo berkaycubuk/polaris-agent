@@ -40,6 +40,38 @@ func TestSeedBuiltinSkills(t *testing.T) {
 	}
 }
 
+func TestLoadSkillsDirectoryLayout(t *testing.T) {
+	dir := t.TempDir()
+	skillsDir := filepath.Join(dir, "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "youtube-music"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillFile := filepath.Join(skillsDir, "youtube-music", "SKILL.md")
+	body := "---\nname: youtube-music\ndescription: manage YouTube Music playlists via ytmusicapi\n---\n\n# YouTube Music\n"
+	if err := os.WriteFile(skillFile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Hidden directories (e.g. .uv-cache) must be ignored.
+	if err := os.MkdirAll(filepath.Join(skillsDir, ".uv-cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	skills, err := loadSkills(skillsDir)
+	if err != nil {
+		t.Fatalf("loadSkills: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d (%+v)", len(skills), skills)
+	}
+	got := skills[0]
+	if got.Name != "youtube-music" || got.File != "youtube-music/SKILL.md" {
+		t.Fatalf("unexpected entry: %+v", got)
+	}
+	if !strings.Contains(got.Description, "ytmusicapi") {
+		t.Fatalf("description not parsed: %q", got.Description)
+	}
+}
+
 func TestComposeUserMessageNoAttachments(t *testing.T) {
 	a := &Agent{}
 	msg, err := a.composeUserMessage(context.Background(), "hello", nil)

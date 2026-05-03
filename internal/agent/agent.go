@@ -234,7 +234,26 @@ func loadSkills(dir string) ([]skillEntry, error) {
 	}
 	var out []skillEntry
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
+		if e.IsDir() {
+			if strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			rel := filepath.Join(e.Name(), "SKILL.md")
+			data, err := os.ReadFile(filepath.Join(dir, rel))
+			if err != nil {
+				continue
+			}
+			name, desc := parseSkillFrontmatter(string(data))
+			if name == "" {
+				name = e.Name()
+			}
+			if desc == "" {
+				desc = firstNonEmptyLine(string(data))
+			}
+			out = append(out, skillEntry{Name: name, Description: desc, File: rel})
+			continue
+		}
+		if !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
 			continue
 		}
 		full := filepath.Join(dir, e.Name())

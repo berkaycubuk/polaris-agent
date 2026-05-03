@@ -25,10 +25,83 @@ reusable skill, or a one-off?"
 
 ## File location and naming
 
-- Path: `skills/<kebab-case-name>.md` (e.g. `skills/shopping-list.md`).
-- One skill per file. Keep names short, specific, and verb- or noun-led.
-- Skill data (lists, logs, state) lives in `wiki/` or a dedicated subfolder
-  the skill defines — never inline in the skill file.
+A skill is **either** a flat markdown file or a directory, depending on
+whether it needs executable code. Default to flat — most skills do.
+
+- **Markdown-only skill** (the default):
+  `skills/<kebab-case-name>.md` (e.g. `skills/shopping-list.md`).
+- **Skill with scripts** (only when the workflow genuinely needs code —
+  external API auth flows, data munging that's painful in shell, anything
+  reusable enough to deserve its own venv):
+  `skills/<kebab-case-name>/SKILL.md` plus the script files alongside it.
+
+Use kebab-case names. One skill per file (or directory). Skill data
+(lists, logs, state) lives in `wiki/` or a dedicated subfolder the skill
+defines — never inline in the skill file.
+
+## When a skill needs scripts
+
+You have `uv` (https://docs.astral.sh/uv) available in the container.
+`uv` manages Python environments and dependencies. Cache lives at
+`/app/data/.uv-cache` and is shared across skills via hardlinks, so a
+package installed in two skills costs disk space once.
+
+Two layouts, pick the simpler one that fits:
+
+**A. Single-file script with inline deps (PEP 723).** Best for skills
+with one script and a few dependencies. No directory, no `pyproject.toml`,
+no manual venv. Put the deps in a header comment; `uv run` builds an
+ephemeral venv on first run and caches it.
+
+```python
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["ytmusicapi"]
+# ///
+import sys
+from ytmusicapi import YTMusic
+...
+```
+
+Layout:
+```
+skills/youtube-music.md          # frontmatter + how to use
+skills/youtube-music.py          # the PEP 723 script
+```
+Run with: `uv run skills/youtube-music.py <args>`
+
+**B. Directory layout with `pyproject.toml`.** Use when a skill has
+multiple scripts, helper modules, or non-trivial configuration. `uv`
+creates `.venv/` on first run; subsequent runs are instant.
+
+Layout:
+```
+skills/<name>/
+  SKILL.md              # the skill spec
+  pyproject.toml        # declared dependencies
+  main.py               # entrypoint(s)
+  helpers.py            # optional helper modules
+  .venv/                # uv-managed, do not commit logically
+```
+Setup (once, when authoring):
+```bash
+cd /app/data/skills/<name>
+uv init --bare --no-workspace --python 3.12
+uv add ytmusicapi   # add each dep the skill needs
+```
+Run later: `cd /app/data/skills/<name> && uv run python main.py <args>`
+
+In both layouts, `uv` re-uses the global cache, so adding a package
+already used by another skill is fast and nearly free on disk.
+
+## Secrets
+
+Never paste API tokens, OAuth refresh tokens, or passwords into a script
+file. Scripts read secrets from disk at runtime. Convention:
+`/app/data/secrets/<service>.json` (or `.env`). The user provisions these
+out-of-band; you (Polaris) read them when scripting and reference the
+path, never the contents. Keep `secrets/` paths out of conversation
+replies.
 
 ## Required structure
 
@@ -83,14 +156,22 @@ When the user asks for a new skill, follow these steps:
    live? What's the file format? Markdown checkboxes, a table, JSON in a
    fenced block, plain bullets? Pick the simplest option that round-trips
    cleanly when you read and rewrite it.
-5. **Draft the skill file** following the structure above. Write it to
-   `skills/<name>.md` with `write_file`.
-6. **Seed any data files** the skill expects (e.g. an empty
+5. **Decide if the skill needs a script.** Default: no. A skill needs
+   scripts only if the workflow genuinely cannot be done with `bash` +
+   `read_file` + `write_file` (typically: OAuth flows, paginated API
+   clients, data parsing that would be ugly in shell). If yes, pick the
+   single-file PEP 723 layout for one script, the directory layout
+   otherwise.
+6. **Draft the skill file** following the structure above. Write it to
+   `skills/<name>.md` (or `skills/<name>/SKILL.md`) with `write_file`.
+   For script-bearing skills, also write the script(s) and run the `uv`
+   setup commands once so the first real use doesn't pay setup cost.
+7. **Seed any data files** the skill expects (e.g. an empty
    `wiki/shopping-list.md` with the right header), so the first real use
    doesn't fail on a missing file.
-7. **Update USER.md** if the skill reflects a lasting fact about the user
+8. **Update USER.md** if the skill reflects a lasting fact about the user
    ("user keeps a single weekly grocery list", "user prefers metric").
-8. **Confirm with the user.** Tell them the skill name, what it does, and
+9. **Confirm with the user.** Tell them the skill name, what it does, and
    the trigger phrase that activates it. Offer to demo it.
 
 ## Template
@@ -143,6 +224,14 @@ Reply: <what to tell the user>
   skill, extend that file instead of creating a sibling.
 - Don't skip the frontmatter. Without it, the skill won't surface in the
   system prompt index correctly.
+- Don't reach for a script when the workflow could be `bash` + a few
+  file ops. Scripts earn their venv by saving real complexity, not by
+  being slightly nicer.
+- Don't `pip install` outside `uv` (no `pip install --user`, no system
+  pip). Always `uv add` (directory layout) or PEP 723 inline deps. This
+  keeps installs cached and skills self-contained.
+- Don't hard-code secrets in scripts. Read them from
+  `/app/data/secrets/<service>.{json,env}` at runtime.
 
 ## After authoring
 
