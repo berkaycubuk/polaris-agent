@@ -9,6 +9,9 @@ import (
 	"github.com/berkaycubuk/polaris-agent/internal/setup"
 )
 
+// Set via -ldflags at build time.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -38,7 +41,7 @@ func main() {
 	case "help", "-h", "--help":
 		printUsage()
 	case "version", "-V", "--version":
-		fmt.Println("polaris dev")
+		fmt.Printf("polaris %s\n", version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
 		printUsage()

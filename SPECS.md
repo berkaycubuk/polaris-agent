@@ -8,7 +8,8 @@ user over time. It has a personality, memories, and a growing knowledge base.
 It supports any OpenAI-compatible chat-completions endpoint (OpenAI, Gemini,
 Anthropic-compat, Groq, OpenRouter, local Ollama, etc.).
 
-Configured via `.env` file. Single Go binary, sandboxed in Docker.
+Configured via `.env` file. Two binaries: a CLI tool for the host machine,
+and a server that runs sandboxed in Docker.
 
 ## Interfaces
 
@@ -195,16 +196,31 @@ On each new session, the system prompt is built from:
 
 ## Architecture
 
+Two binaries built from the same Go module:
+
+- **`polaris`** (`cmd/polaris/`) — CLI tool, runs on the host machine.
+  Handles `setup`, `doctor`, `help`, `version` commands.
+  Installed via `go install` or as a standalone binary.
+
+- **`polaris-server`** (`cmd/server/`) — Agent server, runs inside Docker.
+  Handles the agent loop, HTTP API, Telegram bot, tools, and data seeding.
+  Built inside a multi-stage Docker container.
+
 ```
-cmd/polaris/main.go       — entrypoint, wires everything together
+cmd/
+├── polaris/main.go       — CLI (setup, doctor, help, version)
+└── server/main.go        — server entrypoint, wires everything together
+
 internal/
 ├── agent/                 — core agent loop (chat, tool calling, system prompt)
 ├── attachment/            — image processing pipeline (caption + R2 upload)
 ├── captioner/             — vision model captioning
 ├── config/                — env loading, validation, .env parsing
+├── doctor/                — diagnostic checks (used by CLI)
 ├── llm/                   — OpenAI-compatible chat completions client
 ├── server/                — HTTP API (chat, reset, healthz)
 ├── session/               — in-memory session store
+├── setup/                 — interactive setup wizard (used by CLI)
 ├── skills/                — skill loading, parsing, built-in seeding
 ├── storage/               — Cloudflare R2 uploads (S3-compatible SigV4)
 ├── telegram/              — Telegram bot (long polling, auth)
@@ -216,7 +232,8 @@ The project has **zero external dependencies** — pure Go standard library.
 
 ## Tech
 
-- Single Go binary, built inside a multi-stage Docker container
+- Two Go binaries (CLI + server), zero external dependencies
+- Server built inside a multi-stage Docker container
 - Alpine-based runtime image, runs as non-root user `polaris`
 - Markdown for all persistent data and knowledge
 - Docker provides sandboxing for the `bash` tool
