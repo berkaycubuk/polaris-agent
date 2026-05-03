@@ -23,20 +23,45 @@ type Tool interface {
 
 // Registry holds the active tools and the data directory they operate within.
 type Registry struct {
-	DataDir string
-	tools   map[string]Tool
+	DataDir  string
+	tools    map[string]Tool
+	redactor *secretRedactor
 }
 
 func NewRegistry(dataDir string) *Registry {
-	r := &Registry{DataDir: dataDir, tools: map[string]Tool{}}
+	redactor := newSecretRedactor(filepath.Join(dataDir, "secrets"))
+	r := &Registry{
+		DataDir:  dataDir,
+		tools:    map[string]Tool{},
+		redactor: redactor,
+	}
 	r.register(&readFile{dataDir: dataDir})
 	r.register(&writeFile{dataDir: dataDir})
-	r.register(&bashTool{dataDir: dataDir})
+	r.register(&bashTool{dataDir: dataDir, redactor: redactor})
 	r.register(&searchWiki{dataDir: dataDir})
 	return r
 }
 
 func (r *Registry) register(t Tool) { r.tools[t.Name()] = t }
+
+// SkillEnvNames returns the names of secret SKILL_* env vars detected at
+// startup, sorted. Values stay in subprocess env and are redacted from
+// tool output.
+func (r *Registry) SkillEnvNames() []string {
+	return r.redactor.SkillEnvNames()
+}
+
+// PublicEnvNames returns the names of SKILL_PUBLIC_* env vars — exported
+// to subprocesses but NOT redacted (e.g. OAuth client_id).
+func (r *Registry) PublicEnvNames() []string {
+	return r.redactor.PublicEnvNames()
+}
+
+// SecretsFiles returns relative paths under <dataDir>/secrets/ detected
+// at startup, sorted.
+func (r *Registry) SecretsFiles() []string {
+	return r.redactor.SecretsFiles()
+}
 
 func (r *Registry) Specs() []llm.Tool {
 	out := make([]llm.Tool, 0, len(r.tools))
@@ -51,7 +76,11 @@ func (r *Registry) Run(ctx context.Context, name, args string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
-	return t.Run(ctx, args)
+	out, err := t.Run(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	return r.redactor.Redact(out), nil
 }
 
 // resolvePath joins relative paths under DataDir and prevents escape.
@@ -159,7 +188,10 @@ func (t *writeFile) Run(_ context.Context, args string) (string, error) {
 
 // ---- bash ----
 
-type bashTool struct{ dataDir string }
+type bashTool struct {
+	dataDir  string
+	redactor *secretRedactor
+}
 
 func (t *bashTool) Name() string { return "bash" }
 func (t *bashTool) Spec() llm.Tool {
@@ -204,6 +236,7 @@ func (t *bashTool) Run(ctx context.Context, args string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(cctx, "bash", "-c", a.Command)
 	cmd.Dir = t.dataDir
+	cmd.Env = t.redactor.ChildEnv()
 	out, err := cmd.CombinedOutput()
 	result := string(out)
 	if err != nil {

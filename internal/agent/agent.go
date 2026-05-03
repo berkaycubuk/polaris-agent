@@ -207,6 +207,31 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 		b.WriteString("\n")
 	}
 
+	if names := a.tools.SkillEnvNames(); len(names) > 0 {
+		b.WriteString("# Skill secrets (env, redacted)\n")
+		b.WriteString("Scripts read via os.environ. Values are redacted from tool output, so you'll only see the value as [REDACTED] in any script you run. Treat as opaque secrets — never echo or paste into a reply. Names:\n")
+		for _, n := range names {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+		b.WriteString("\n")
+	}
+	if names := a.tools.PublicEnvNames(); len(names) > 0 {
+		b.WriteString("# Skill identifiers (env, public)\n")
+		b.WriteString("Public identifiers (OAuth client_id, public webhook IDs, etc.). Passed to scripts via os.environ AND visible in tool output — safe to include in user-facing URLs (e.g. OAuth auth links). Names:\n")
+		for _, n := range names {
+			fmt.Fprintf(&b, "- %s\n", n)
+		}
+		b.WriteString("\n")
+	}
+	if files := a.tools.SecretsFiles(); len(files) > 0 {
+		b.WriteString("# Skill secrets (files)\n")
+		b.WriteString("Files under /app/data/secrets/ — scripts open them directly; contents are redacted from tool output:\n")
+		for _, f := range files {
+			fmt.Fprintf(&b, "- secrets/%s\n", f)
+		}
+		b.WriteString("\n")
+	}
+
 	b.WriteString("# Working notes\n")
 	b.WriteString(fmt.Sprintf("Data directory: %s\n", a.dataDir))
 	b.WriteString("Use search_wiki before answering from memory; write new knowledge into wiki/<topic>.md.\n")

@@ -128,6 +128,13 @@ func (b *Bot) handleMessage(ctx context.Context, m *message) {
 		return
 	}
 
+	// Show "typing..." for the entire request, including any attachment
+	// downloads. Telegram's chat action auto-expires after ~5s, so we
+	// refresh on a ticker until the reply is sent.
+	typingCtx, stopTyping := context.WithCancel(ctx)
+	defer stopTyping()
+	go b.pumpTyping(typingCtx, chatID)
+
 	attachments, err := b.collectAttachments(ctx, m)
 	if err != nil {
 		log.Printf("telegram fetch attachment: %v", err)
@@ -142,6 +149,7 @@ func (b *Bot) handleMessage(ctx context.Context, m *message) {
 	chatCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	reply, err := b.agent.Chat(chatCtx, session, text, attachments...)
+	stopTyping()
 	if err != nil {
 		log.Printf("agent chat: %v", err)
 		_ = b.send(ctx, chatID, fmt.Sprintf("error: %v", err))
@@ -153,6 +161,48 @@ func (b *Bot) handleMessage(ctx context.Context, m *message) {
 	if err := b.send(ctx, chatID, reply); err != nil {
 		log.Printf("telegram send: %v", err)
 	}
+}
+
+// pumpTyping keeps the "typing..." indicator visible while the agent
+// processes. Telegram's sendChatAction status expires after ~5 seconds,
+// so we re-send every 4. Returns when ctx is cancelled.
+func (b *Bot) pumpTyping(ctx context.Context, chatID int64) {
+	if err := b.sendChatAction(ctx, chatID, "typing"); err != nil && ctx.Err() == nil {
+		log.Printf("telegram chatAction: %v", err)
+	}
+	t := time.NewTicker(4 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := b.sendChatAction(ctx, chatID, "typing"); err != nil && ctx.Err() == nil {
+				log.Printf("telegram chatAction: %v", err)
+			}
+		}
+	}
+}
+
+func (b *Bot) sendChatAction(ctx context.Context, chatID int64, action string) error {
+	body := map[string]any{"chat_id": chatID, "action": action}
+	data, _ := json.Marshal(body)
+	u := apiBase + b.token + "/sendChatAction"
+	req, err := http.NewRequestWithContext(ctx, "POST", u, strings.NewReader(string(data)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := b.http.Do(req)
+	if err != nil {
+		return err
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("sendChatAction %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // collectAttachments downloads any image attachments on the message and

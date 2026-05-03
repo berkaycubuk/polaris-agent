@@ -97,11 +97,63 @@ already used by another skill is fast and nearly free on disk.
 ## Secrets
 
 Never paste API tokens, OAuth refresh tokens, or passwords into a script
-file. Scripts read secrets from disk at runtime. Convention:
-`/app/data/secrets/<service>.json` (or `.env`). The user provisions these
-out-of-band; you (Polaris) read them when scripting and reference the
-path, never the contents. Keep `secrets/` paths out of conversation
-replies.
+file. The user supplies secrets two ways; both reach scripts at runtime
+without entering your context:
+
+**1. Environment variables in `.env`, two prefixes:**
+
+- `SKILL_*` — actual secrets (refresh tokens, client_secrets, API
+  keys). Passed to subprocesses **and redacted** from tool output. You
+  will only ever see the value as `[REDACTED]` in any script you run.
+  Treat as opaque; never echo into a reply.
+
+- `SKILL_PUBLIC_*` — public identifiers that the user-facing flow
+  legitimately needs to surface (OAuth `client_id`, public webhook IDs,
+  Stripe publishable keys, etc.). Passed to subprocesses **and not
+  redacted**. Safe to include in URLs you send back to the user.
+
+OAuth example (note which prefix to use):
+
+```
+SKILL_PUBLIC_GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+SKILL_GOOGLE_CLIENT_SECRET=GOCSPX-...
+```
+
+```python
+import os
+client_id     = os.environ["SKILL_PUBLIC_GOOGLE_CLIENT_ID"]   # visible
+client_secret = os.environ["SKILL_GOOGLE_CLIENT_SECRET"]      # secret
+```
+
+If you build an auth URL, the `client_id` must be included verbatim
+(that's what the OAuth provider expects). The `client_secret` only goes
+into server-side token-exchange POSTs, never into URLs.
+
+**2. Files under `/app/data/secrets/`.**
+For multi-line blobs (Google service account JSON, PEM keys, OAuth
+state), the user writes a file like `/app/data/secrets/google-oauth.json`
+out-of-band. Scripts open it directly:
+
+```python
+import json, pathlib
+creds = json.loads(pathlib.Path("/app/data/secrets/google-oauth.json").read_text())
+```
+
+Polaris registers the contents of every file under `secrets/` for
+redaction, so even if the agent (you) `read_file`s or `cat`s one, the
+sensitive values come back as `[REDACTED]`.
+
+### Rules for skills that need secrets
+
+- The skill's `SKILL.md` must list the env vars and/or files it needs,
+  named explicitly (e.g. "requires `SKILL_SPOTIFY_REFRESH_TOKEN`").
+- If a required secret is missing, the script fails fast with a clear
+  error message naming what's needed — do not improvise placeholders.
+- Never log a secret value. Never include one in a tool argument
+  (e.g. `bash: echo $SKILL_FOO`). The redactor will catch most leaks but
+  the right approach is to not echo them in the first place.
+- Don't ask the user to paste a secret into chat. Direct them to add it
+  to `.env` or write the file under `secrets/`.
 
 ## Required structure
 

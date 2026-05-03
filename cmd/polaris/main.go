@@ -31,6 +31,17 @@ func main() {
 
 	llmClient := llm.New(cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.LLMModel)
 	registry := tools.NewRegistry(cfg.DataDir)
+	if names := registry.SkillEnvNames(); len(names) > 0 {
+		log.Printf("skill secret env vars (%d): %v", len(names), names)
+	} else {
+		log.Printf("no SKILL_* (secret) env vars detected")
+	}
+	if names := registry.PublicEnvNames(); len(names) > 0 {
+		log.Printf("skill public env vars (%d): %v", len(names), names)
+	}
+	if files := registry.SecretsFiles(); len(files) > 0 {
+		log.Printf("secrets files detected (%d): %v", len(files), files)
+	}
 
 	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations}
 	if cfg.ImageCaptionEnabled() {
