@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/berkaycubuk/polaris-agent/internal/agent"
+	"github.com/berkaycubuk/polaris-agent/internal/attachment"
 )
 
 const apiBase = "https://api.telegram.org/bot"
@@ -208,8 +209,8 @@ func (b *Bot) sendChatAction(ctx context.Context, chatID int64, action string) e
 // collectAttachments downloads any image attachments on the message and
 // returns them as agent.Attachments. Photos pick the largest size; documents
 // are included only if their MIME type starts with "image/".
-func (b *Bot) collectAttachments(ctx context.Context, m *message) ([]agent.Attachment, error) {
-	var atts []agent.Attachment
+func (b *Bot) collectAttachments(ctx context.Context, m *message) ([]attachment.Attachment, error) {
+	var atts []attachment.Attachment
 	if len(m.Photo) > 0 {
 		largest := m.Photo[0]
 		for _, p := range m.Photo[1:] {
@@ -224,14 +225,14 @@ func (b *Bot) collectAttachments(ctx context.Context, m *message) ([]agent.Attac
 		if mime == "" {
 			mime = "image/jpeg"
 		}
-		atts = append(atts, agent.Attachment{Data: data, MimeType: mime})
+		atts = append(atts, attachment.Attachment{Data: data, MimeType: mime})
 	}
 	if m.Document != nil && strings.HasPrefix(m.Document.MimeType, "image/") {
 		data, _, err := b.downloadFile(ctx, m.Document.FileID)
 		if err != nil {
 			return nil, err
 		}
-		atts = append(atts, agent.Attachment{Data: data, MimeType: m.Document.MimeType})
+		atts = append(atts, attachment.Attachment{Data: data, MimeType: m.Document.MimeType})
 	}
 	return atts, nil
 }

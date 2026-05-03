@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/berkaycubuk/polaris-agent/internal/agent"
+	"github.com/berkaycubuk/polaris-agent/internal/attachment"
 	"github.com/berkaycubuk/polaris-agent/internal/captioner"
 	"github.com/berkaycubuk/polaris-agent/internal/config"
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
@@ -43,20 +44,26 @@ func main() {
 		log.Printf("secrets files detected (%d): %v", len(files), files)
 	}
 
-	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations}
-	if cfg.ImageCaptionEnabled() {
-		capClient := llm.New(cfg.ImageCaptionBaseURL, cfg.ImageCaptionAPIKey, cfg.ImageCaptionModel)
-		opts.Captioner = captioner.New(capClient)
-		log.Printf("image captioner enabled: %s @ %s", cfg.ImageCaptionModel, cfg.ImageCaptionBaseURL)
-	} else {
-		log.Printf("image captioner disabled (set IMAGE_CAPTION_* to enable)")
+	var proc *attachment.Processor
+	{
+		var cap *captioner.Captioner
+		if cfg.ImageCaptionEnabled() {
+			capClient := llm.New(cfg.ImageCaptionBaseURL, cfg.ImageCaptionAPIKey, cfg.ImageCaptionModel)
+			cap = captioner.New(capClient)
+			log.Printf("image captioner enabled: %s @ %s", cfg.ImageCaptionModel, cfg.ImageCaptionBaseURL)
+		} else {
+			log.Printf("image captioner disabled (set IMAGE_CAPTION_* to enable)")
+		}
+		var r2 *storage.R2
+		if cfg.R2Enabled() {
+			r2 = storage.New(cfg.R2AccountID, cfg.R2Bucket, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2PublicBaseURL)
+			log.Printf("r2 storage enabled: bucket=%s", cfg.R2Bucket)
+		} else {
+			log.Printf("r2 storage disabled (set R2_* to enable)")
+		}
+		proc = attachment.NewProcessor(cap, r2)
 	}
-	if cfg.R2Enabled() {
-		opts.R2 = storage.New(cfg.R2AccountID, cfg.R2Bucket, cfg.R2AccessKeyID, cfg.R2SecretKey, cfg.R2PublicBaseURL)
-		log.Printf("r2 storage enabled: bucket=%s", cfg.R2Bucket)
-	} else {
-		log.Printf("r2 storage disabled (set R2_* to enable)")
-	}
+	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations, Processor: proc}
 
 	a := agent.New(llmClient, registry, cfg.DataDir, opts)
 

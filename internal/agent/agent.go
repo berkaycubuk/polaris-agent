@@ -2,20 +2,16 @@ package agent
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
-	"time"
 
-	"github.com/berkaycubuk/polaris-agent/internal/captioner"
+	"github.com/berkaycubuk/polaris-agent/internal/attachment"
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
+	"github.com/berkaycubuk/polaris-agent/internal/session"
 	"github.com/berkaycubuk/polaris-agent/internal/skills"
-	"github.com/berkaycubuk/polaris-agent/internal/storage"
 	"github.com/berkaycubuk/polaris-agent/internal/tools"
 )
 
@@ -31,20 +27,17 @@ Be candid, curious, and concise.`
 )
 
 type Agent struct {
-	mu                sync.Mutex
 	llm               *llm.Client
 	tools             *tools.Registry
 	dataDir           string
 	maxToolIterations int
-	captioner         *captioner.Captioner // optional
-	r2                *storage.R2          // optional
-	sessions          map[string][]llm.Message
+	sessions          *session.Store
+	processor         *attachment.Processor
 }
 
 type Options struct {
 	MaxToolIterations int
-	Captioner         *captioner.Captioner
-	R2                *storage.R2
+	Processor         *attachment.Processor
 }
 
 func New(c *llm.Client, t *tools.Registry, dataDir string, opts Options) *Agent {
@@ -56,16 +49,9 @@ func New(c *llm.Client, t *tools.Registry, dataDir string, opts Options) *Agent 
 		tools:             t,
 		dataDir:           dataDir,
 		maxToolIterations: opts.MaxToolIterations,
-		captioner:         opts.Captioner,
-		r2:                opts.R2,
-		sessions:          map[string][]llm.Message{},
+		sessions:          session.NewStore(),
+		processor:         opts.Processor,
 	}
-}
-
-// Attachment is binary content (e.g. an image) attached to a user message.
-type Attachment struct {
-	Data     []byte
-	MimeType string // e.g. "image/jpeg"
 }
 
 // Chat sends a user message into the named session and returns the assistant
@@ -73,16 +59,14 @@ type Attachment struct {
 // attachments are captioned by a separate vision model and (optionally)
 // uploaded to R2; only the text caption + storage URL enter session history,
 // keeping the context window light.
-func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachments ...Attachment) (string, error) {
+func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachments ...attachment.Attachment) (string, error) {
 	if err := a.ensureDataDirs(); err != nil {
 		return "", err
 	}
 
 	var history []llm.Message
 	if sessionID != "" {
-		a.mu.Lock()
-		history = append([]llm.Message(nil), a.sessions[sessionID]...)
-		a.mu.Unlock()
+		history = a.sessions.Get(sessionID)
 	}
 
 	if len(history) == 0 {
@@ -93,7 +77,7 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 		history = append(history, llm.Message{Role: llm.RoleSystem, Content: sys})
 	}
 
-	userMsg, err := a.composeUserMessage(ctx, userMessage, attachments)
+	userMsg, err := a.processor.Compose(ctx, userMessage, attachments)
 	if err != nil {
 		return "", err
 	}
@@ -110,9 +94,7 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 
 		if len(msg.ToolCalls) == 0 {
 			if sessionID != "" {
-				a.mu.Lock()
-				a.sessions[sessionID] = history
-				a.mu.Unlock()
+				a.sessions.Set(sessionID, history)
 			}
 			return msg.Content, nil
 		}
@@ -136,9 +118,7 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 
 // Reset clears a session's history.
 func (a *Agent) Reset(sessionID string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	delete(a.sessions, sessionID)
+	a.sessions.Delete(sessionID)
 }
 
 func (a *Agent) ensureDataDirs() error {
@@ -202,88 +182,6 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	b.WriteString("Update USER.md when you learn lasting facts about your user.\n")
 
 	return b.String(), nil
-}
-
-// composeUserMessage processes attachments into a single text-only user
-// message. For each image: optionally upload to R2 (preserving the original)
-// and caption via the vision model; the caption + storage URL are inlined
-// into the message text. Image bytes never enter session history.
-func (a *Agent) composeUserMessage(ctx context.Context, text string, atts []Attachment) (llm.Message, error) {
-	if len(atts) == 0 {
-		return llm.Message{Role: llm.RoleUser, Content: text}, nil
-	}
-
-	var b strings.Builder
-	if t := strings.TrimSpace(text); t != "" {
-		b.WriteString(t)
-		b.WriteString("\n\n")
-	}
-
-	for i, att := range atts {
-		mime := att.MimeType
-		if mime == "" {
-			mime = "image/jpeg"
-		}
-
-		var storedURL string
-		if a.r2 != nil {
-			key := imageKey(mime)
-			url, err := a.r2.Put(ctx, key, att.Data, mime)
-			if err != nil {
-				log.Printf("r2 put failed: %v", err)
-			} else {
-				storedURL = url
-			}
-		}
-
-		var caption string
-		if a.captioner != nil {
-			c, err := a.captioner.Caption(ctx, att.Data, mime, text)
-			if err != nil {
-				log.Printf("caption failed: %v", err)
-				caption = "(caption unavailable: " + err.Error() + ")"
-			} else {
-				caption = c
-			}
-		} else {
-			caption = "(no captioner configured; image content not described)"
-		}
-
-		fmt.Fprintf(&b, "[Image %d — %s]\n%s\n", i+1, mime, caption)
-		if storedURL != "" {
-			fmt.Fprintf(&b, "Stored at: %s\n", storedURL)
-		}
-		if i < len(atts)-1 {
-			b.WriteString("\n")
-		}
-	}
-
-	return llm.Message{Role: llm.RoleUser, Content: strings.TrimSpace(b.String())}, nil
-}
-
-// imageKey produces a sortable, collision-resistant object key for R2.
-// Format: images/YYYY/MM/<unix>-<rand>.<ext>
-func imageKey(mime string) string {
-	now := time.Now().UTC()
-	var rb [6]byte
-	_, _ = rand.Read(rb[:])
-	ext := extFromMime(mime)
-	return fmt.Sprintf("images/%04d/%02d/%d-%s%s",
-		now.Year(), int(now.Month()), now.Unix(), hex.EncodeToString(rb[:]), ext)
-}
-
-func extFromMime(m string) string {
-	switch m {
-	case "image/jpeg":
-		return ".jpg"
-	case "image/png":
-		return ".png"
-	case "image/webp":
-		return ".webp"
-	case "image/gif":
-		return ".gif"
-	}
-	return ".bin"
 }
 
 func readOr(path, fallback string) string {
