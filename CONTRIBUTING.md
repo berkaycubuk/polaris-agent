@@ -1,7 +1,5 @@
 # Contributing to Polaris Agent
 
-Thanks for your interest! Here's how to get started.
-
 ## Prerequisites
 
 - [Go](https://go.dev/dl/) 1.24+
