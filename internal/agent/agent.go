@@ -12,6 +12,7 @@ import (
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
 	"github.com/berkaycubuk/polaris-agent/internal/session"
 	"github.com/berkaycubuk/polaris-agent/internal/skills"
+	"github.com/berkaycubuk/polaris-agent/internal/snapshot"
 	"github.com/berkaycubuk/polaris-agent/internal/tools"
 )
 
@@ -33,11 +34,13 @@ type Agent struct {
 	maxToolIterations int
 	sessions          *session.Store
 	processor         *attachment.Processor
+	snap              *snapshot.Snapshotter
 }
 
 type Options struct {
 	MaxToolIterations int
 	Processor         *attachment.Processor
+	Snapshotter       *snapshot.Snapshotter
 }
 
 func New(c *llm.Client, t *tools.Registry, dataDir string, opts Options) *Agent {
@@ -51,6 +54,7 @@ func New(c *llm.Client, t *tools.Registry, dataDir string, opts Options) *Agent 
 		maxToolIterations: opts.MaxToolIterations,
 		sessions:          session.NewStore(),
 		processor:         opts.Processor,
+		snap:              opts.Snapshotter,
 	}
 }
 
@@ -96,6 +100,9 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 			if sessionID != "" {
 				a.sessions.Set(sessionID, history)
 			}
+			// Best-effort: snapshot whatever the agent changed this turn.
+			// Snapshot failures must never fail a chat reply.
+			_ = a.snap.Commit(sessionID)
 			return msg.Content, nil
 		}
 

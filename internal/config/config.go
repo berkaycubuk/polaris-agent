@@ -37,6 +37,11 @@ type Config struct {
 	// When set, only messages from these IDs are processed. If empty, the
 	// bot responds to anyone (not recommended for public repos).
 	TelegramAllowedIDs []int64
+
+	// GitEnabled toggles per-turn git snapshots of the data dir. Defaults
+	// to true; set GIT_ENABLED=false to disable. When false, the agent
+	// runs without a recovery history.
+	GitEnabled bool
 }
 
 func Load() (*Config, error) {
@@ -63,6 +68,8 @@ func Load() (*Config, error) {
 		R2PublicBaseURL: os.Getenv("R2_PUBLIC_BASE_URL"),
 
 		TelegramAllowedIDs: parseIDList(os.Getenv("TELEGRAM_ALLOWED_USERS")),
+
+		GitEnabled: getenvBool("GIT_ENABLED", true),
 	}
 
 	var missing []string
@@ -172,6 +179,22 @@ func getenvInt(k string, d int) int {
 		return d
 	}
 	return n
+}
+
+// getenvBool returns the boolean value of env var k. Empty / unset returns
+// the default. Recognised true values: 1, true, yes, on (case-insensitive).
+// Anything else is treated as false so a typo doesn't silently re-enable.
+func getenvBool(k string, d bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(k)))
+	if v == "" {
+		return d
+	}
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func loadDotEnv(path string) {

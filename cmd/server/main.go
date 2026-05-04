@@ -15,6 +15,7 @@ import (
 	"github.com/berkaycubuk/polaris-agent/internal/config"
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
 	"github.com/berkaycubuk/polaris-agent/internal/server"
+	"github.com/berkaycubuk/polaris-agent/internal/snapshot"
 	"github.com/berkaycubuk/polaris-agent/internal/storage"
 	"github.com/berkaycubuk/polaris-agent/internal/telegram"
 	"github.com/berkaycubuk/polaris-agent/internal/tools"
@@ -70,7 +71,13 @@ func serve() {
 		}
 		proc = attachment.NewProcessor(cap, r2)
 	}
-	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations, Processor: proc}
+	snap := snapshot.New(cfg.DataDir, cfg.GitEnabled)
+	if snap.Enabled() {
+		log.Printf("snapshots enabled: per-turn git commits in %s", cfg.DataDir)
+	} else {
+		log.Printf("snapshots disabled (GIT_ENABLED=false or git binary missing)")
+	}
+	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations, Processor: proc, Snapshotter: snap}
 
 	a := agent.New(llmClient, registry, cfg.DataDir, opts)
 
