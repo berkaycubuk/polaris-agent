@@ -43,6 +43,30 @@ polaris setup
 docker compose up -d
 ```
 
+## Deploy on a VPS
+
+Run the agent on a Linux server using the prebuilt image — no source checkout required:
+
+```bash
+# 1. Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER && newgrp docker
+
+# 2. Install the polaris CLI
+curl -fsSL https://raw.githubusercontent.com/berkaycubuk/polaris-agent/main/scripts/install.sh | sh
+
+# 3. Configure in a working directory
+mkdir -p ~/polaris && cd ~/polaris
+curl -fsSL https://raw.githubusercontent.com/berkaycubuk/polaris-agent/main/docker-compose.prod.yml -o docker-compose.yml
+polaris setup    # writes .env
+
+# 4. Start the agent
+docker compose up -d
+docker compose logs -f
+```
+
+The image is `ghcr.io/berkaycubuk/polaris-agent:latest` (pin to a version in production, e.g. `:v0.1.0`). Pull updates with `docker compose pull && docker compose up -d`.
+
 **Diagnose issues:**
 
 ```bash

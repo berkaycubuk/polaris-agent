@@ -1,0 +1,21 @@
+services:
+  polaris:
+    image: ghcr.io/berkaycubuk/polaris-agent:latest
+    container_name: polaris
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - polaris-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+      - /home/polaris:noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  polaris-data:
