@@ -103,11 +103,22 @@ func Run(opts Options) error {
 	}
 }
 
+// banner is the figlet "Sub-Zero" rendering of "Polaris Agent".
+const banner = `   ______   ______     __         ______     ______     __     ______
+  /\  == \ /\  __ \   /\ \       /\  __ \   /\  == \   /\ \   /\  ___\
+  \ \  _-/ \ \ \/\ \  \ \ \____  \ \  __ \  \ \  __<   \ \ \  \ \___  \
+   \ \_\    \ \_____\  \ \_____\  \ \_\ \_\  \ \_\ \_\  \ \_\  \/\_____\
+    \/_/     \/_____/   \/_____/   \/_/\/_/   \/_/ /_/   \/_/   \/_____/
+
+   ______     ______     ______     __   __     ______
+  /\  __ \   /\  ___\   /\  ___\   /\ "-.\ \   /\__  _\
+  \ \  __ \  \ \ \__ \  \ \  __\   \ \ \-.  \  \/_/\ \/
+   \ \_\ \_\  \ \_____\  \ \_____\  \ \_\\"\_\    \ \_\
+    \/_/\/_/   \/_____/   \/_____/   \/_/ \/_/     \/_/`
+
 func printBanner(opts Options) {
 	fmt.Print("\n")
-	fmt.Println("  ╔═══════════════════════════════════════════╗")
-	fmt.Println("  ║       ★ Polaris Chat ★                    ║")
-	fmt.Println("  ╚═══════════════════════════════════════════╝")
+	fmt.Printf("%s%s%s\n", cyan, banner, reset)
 	fmt.Print("\n")
 	fmt.Printf("  Server:  %s%s%s\n", dim, opts.ServerURL, reset)
 	fmt.Printf("  Session: %s%s%s\n", dim, opts.Session, reset)
