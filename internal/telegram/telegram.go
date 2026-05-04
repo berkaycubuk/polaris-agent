@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/berkaycubuk/polaris-agent/internal/agent"
@@ -26,6 +27,7 @@ type Bot struct {
 	http       *http.Client
 	allowedIDs []int64 // explicit allowlist from TELEGRAM_ALLOWED_USERS
 	ownerFile  string  // path to persist auto-detected owner
+	msgs       *msgCache
 }
 
 func New(token string, a *agent.Agent, allowedIDs []int64, ownerFile string) *Bot {
@@ -35,22 +37,90 @@ func New(token string, a *agent.Agent, allowedIDs []int64, ownerFile string) *Bo
 		http:       &http.Client{Timeout: 70 * time.Second},
 		allowedIDs: allowedIDs,
 		ownerFile:  ownerFile,
+		msgs:       newMsgCache(500),
 	}
 }
 
+// msgRecord captures enough about a Telegram message to quote it back when
+// the user later reacts to it. fromBot tells us whether to frame the quote
+// as "your earlier message" (agent) or "my earlier message" (user).
+type msgRecord struct {
+	text    string
+	fromBot bool
+}
+
+// msgCache is a tiny FIFO cache of recent messages keyed by (chat_id,
+// message_id). Bounded so a busy chat can't grow unbounded across a long
+// uptime; older entries fall out and reactions on them quote the message
+// generically.
+type msgCache struct {
+	mu    sync.Mutex
+	data  map[string]msgRecord
+	order []string
+	cap   int
+}
+
+func newMsgCache(capacity int) *msgCache {
+	return &msgCache{data: map[string]msgRecord{}, cap: capacity}
+}
+
+func msgKey(chatID int64, msgID int) string {
+	return strconv.FormatInt(chatID, 10) + ":" + strconv.Itoa(msgID)
+}
+
+func (c *msgCache) put(chatID int64, msgID int, rec msgRecord) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	k := msgKey(chatID, msgID)
+	if _, ok := c.data[k]; !ok {
+		c.order = append(c.order, k)
+		if len(c.order) > c.cap {
+			delete(c.data, c.order[0])
+			c.order = c.order[1:]
+		}
+	}
+	c.data[k] = rec
+}
+
+func (c *msgCache) get(chatID int64, msgID int) (msgRecord, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rec, ok := c.data[msgKey(chatID, msgID)]
+	return rec, ok
+}
+
 type update struct {
-	UpdateID int      `json:"update_id"`
-	Message  *message `json:"message"`
+	UpdateID        int                     `json:"update_id"`
+	Message         *message                `json:"message"`
+	MessageReaction *messageReactionUpdated `json:"message_reaction"`
+}
+
+// messageReactionUpdated is the payload Telegram sends when a user adds or
+// removes an emoji reaction on a message. Requires opting in via
+// allowed_updates=["message","message_reaction"] on getUpdates.
+type messageReactionUpdated struct {
+	Chat        chat           `json:"chat"`
+	MessageID   int            `json:"message_id"`
+	User        *user          `json:"user"`
+	OldReaction []reactionType `json:"old_reaction"`
+	NewReaction []reactionType `json:"new_reaction"`
+}
+
+type reactionType struct {
+	Type     string `json:"type"`            // "emoji" or "custom_emoji"
+	Emoji    string `json:"emoji,omitempty"` // present when type == "emoji"
+	CustomID string `json:"custom_emoji_id,omitempty"`
 }
 
 type message struct {
-	MessageID int         `json:"message_id"`
-	Chat      chat        `json:"chat"`
-	From      *user       `json:"from"`
-	Text      string      `json:"text"`
-	Caption   string      `json:"caption"`
-	Photo     []photoSize `json:"photo"`
-	Document  *document   `json:"document"`
+	MessageID      int         `json:"message_id"`
+	Chat           chat        `json:"chat"`
+	From           *user       `json:"from"`
+	Text           string      `json:"text"`
+	Caption        string      `json:"caption"`
+	Photo          []photoSize `json:"photo"`
+	Document       *document   `json:"document"`
+	ReplyToMessage *message    `json:"reply_to_message,omitempty"`
 }
 
 type photoSize struct {
@@ -118,6 +188,10 @@ func (b *Bot) Run(ctx context.Context) error {
 		}
 		for _, u := range ups {
 			offset = u.UpdateID + 1
+			if u.MessageReaction != nil {
+				b.handleReaction(u.MessageReaction)
+				continue
+			}
 			if u.Message == nil {
 				continue
 			}
@@ -127,6 +201,69 @@ func (b *Bot) Run(ctx context.Context) error {
 			b.handleMessage(ctx, u.Message)
 		}
 	}
+}
+
+// handleReaction notes a Telegram emoji reaction in the agent's session
+// history without triggering a reply. Only additions are recorded — removing
+// a reaction would just create chatter. The reacted-to message is looked up
+// in the per-chat cache so the agent sees a quoted excerpt and knows which
+// side spoke ("your" for agent messages, "my" for the user's own).
+func (b *Bot) handleReaction(r *messageReactionUpdated) {
+	if r == nil {
+		return
+	}
+	if !b.isAllowed(r.Chat.ID) {
+		return
+	}
+	added := newEmojis(r.OldReaction, r.NewReaction)
+	if len(added) == 0 {
+		return
+	}
+	session := "telegram:" + strconv.FormatInt(r.Chat.ID, 10)
+	emojis := strings.Join(added, "")
+
+	rec, ok := b.msgs.get(r.Chat.ID, r.MessageID)
+	var note string
+	switch {
+	case !ok:
+		// Message fell out of the cache (or predates the bot's uptime).
+		note = fmt.Sprintf("[I reacted %s to one of your earlier messages]", emojis)
+	case rec.text == "":
+		who := whoseMessage(rec.fromBot)
+		note = fmt.Sprintf("[I reacted %s to %s earlier message]", emojis, who)
+	default:
+		who := whoseMessage(rec.fromBot)
+		note = fmt.Sprintf("[I reacted %s to %s earlier message: \"%s\"]", emojis, who, excerpt(rec.text, 200))
+	}
+	b.agent.Observe(session, note)
+}
+
+func whoseMessage(fromBot bool) string {
+	if fromBot {
+		return "your"
+	}
+	return "my"
+}
+
+// newEmojis returns the emoji reactions present in cur but not in prev.
+// Custom emojis are skipped — we only have the ID, not the visible glyph.
+func newEmojis(prev, cur []reactionType) []string {
+	seen := map[string]bool{}
+	for _, p := range prev {
+		if p.Type == "emoji" {
+			seen[p.Emoji] = true
+		}
+	}
+	var out []string
+	for _, c := range cur {
+		if c.Type != "emoji" || c.Emoji == "" {
+			continue
+		}
+		if !seen[c.Emoji] {
+			out = append(out, c.Emoji)
+		}
+	}
+	return out
 }
 
 func (b *Bot) handleMessage(ctx context.Context, m *message) {
@@ -145,6 +282,11 @@ func (b *Bot) handleMessage(ctx context.Context, m *message) {
 		text = strings.TrimSpace(m.Caption)
 	}
 
+	// Remember the incoming message so a later reaction on it can be quoted
+	// back to the agent. Photos with no caption still get an empty entry so
+	// the message_id is at least known.
+	b.msgs.put(chatID, m.MessageID, msgRecord{text: text, fromBot: false})
+
 	if text == "/start" {
 		_ = b.send(ctx, chatID, "Hi, I'm Polaris. Send me anything — text or photos.")
 		return
@@ -153,6 +295,14 @@ func (b *Bot) handleMessage(ctx context.Context, m *message) {
 		b.agent.Reset(session)
 		_ = b.send(ctx, chatID, "Session cleared.")
 		return
+	}
+
+	if prefix := replyPrefix(m); prefix != "" {
+		if text == "" {
+			text = prefix
+		} else {
+			text = prefix + "\n\n" + text
+		}
 	}
 
 	// Show "typing..." for the entire request, including any attachment
@@ -366,6 +516,40 @@ func (b *Bot) downloadFile(ctx context.Context, fileID string) ([]byte, string, 
 	return data, mimeFromPath(fr.Result.FilePath), nil
 }
 
+// replyPrefix builds a one-line context note when the user is replying to a
+// prior message in the chat. Frames the agent in second person ("your") and
+// the user in first person ("my") so the agent can tell which side spoke.
+// Returns "" when there's no quotable text on the replied-to message.
+func replyPrefix(m *message) string {
+	r := m.ReplyToMessage
+	if r == nil {
+		return ""
+	}
+	quoted := strings.TrimSpace(r.Text)
+	if quoted == "" {
+		quoted = strings.TrimSpace(r.Caption)
+	}
+	if quoted == "" {
+		return ""
+	}
+	who := "your"
+	if r.From != nil && m.From != nil && r.From.ID == m.From.ID {
+		who = "my"
+	}
+	return fmt.Sprintf("[Replying to %s earlier message: \"%s\"]", who, excerpt(quoted, 200))
+}
+
+// excerpt collapses internal whitespace and truncates s to at most max runes,
+// appending an ellipsis when truncated.
+func excerpt(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "…"
+}
+
 func mimeFromPath(p string) string {
 	switch {
 	case strings.HasSuffix(p, ".jpg"), strings.HasSuffix(p, ".jpeg"):
@@ -384,6 +568,10 @@ func (b *Bot) getUpdates(ctx context.Context, offset, timeout int) ([]update, er
 	q := url.Values{}
 	q.Set("offset", strconv.Itoa(offset))
 	q.Set("timeout", strconv.Itoa(timeout))
+	// Telegram's default allowed_updates excludes message_reaction; opt in
+	// explicitly. Listing "message" too because once we set the param we're
+	// no longer on defaults.
+	q.Set("allowed_updates", `["message","message_reaction"]`)
 	u := apiBase + b.token + "/getUpdates?" + q.Encode()
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
@@ -415,6 +603,8 @@ func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
 }
 
 // Telegram caps message length at 4096 chars; chunk longer responses.
+// Each successfully-sent chunk is cached with its message_id so a later
+// reaction can quote which chunk the user reacted to.
 func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 	const limit = 4000
 	for len(text) > 0 {
@@ -440,6 +630,14 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			return fmt.Errorf("sendMessage %d: %s", resp.StatusCode, string(respBody))
+		}
+		var sr struct {
+			Result struct {
+				MessageID int `json:"message_id"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(respBody, &sr); err == nil && sr.Result.MessageID != 0 {
+			b.msgs.put(chatID, sr.Result.MessageID, msgRecord{text: piece, fromBot: true})
 		}
 	}
 	return nil

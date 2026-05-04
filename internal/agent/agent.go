@@ -129,6 +129,22 @@ func (a *Agent) Reset(sessionID string) {
 	a.sessions.Delete(sessionID)
 }
 
+// Observe appends a passive note to a session's history without invoking the
+// LLM. Used for ambient signals (e.g. Telegram reactions) the agent should
+// notice on its next turn but that don't themselves warrant a reply. Skipped
+// when the session has no history yet — there's nothing to anchor against.
+func (a *Agent) Observe(sessionID, note string) {
+	if sessionID == "" || note == "" {
+		return
+	}
+	history := a.sessions.Get(sessionID)
+	if len(history) == 0 {
+		return
+	}
+	history = append(history, llm.Message{Role: llm.RoleUser, Content: note})
+	a.sessions.Set(sessionID, history)
+}
+
 func (a *Agent) ensureDataDirs() error {
 	for _, d := range []string{"", "wiki", "skills"} {
 		if err := os.MkdirAll(filepath.Join(a.dataDir, d), 0o755); err != nil {
