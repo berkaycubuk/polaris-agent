@@ -408,6 +408,12 @@ func (b *Bot) getUpdates(ctx context.Context, offset, timeout int) ([]update, er
 	return out.Result, nil
 }
 
+// Send pushes text to chatID, splitting on Telegram's 4096-char limit.
+// Used by external callers (e.g. the scheduler delivering cron-job replies).
+func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
+	return b.send(ctx, chatID, text)
+}
+
 // Telegram caps message length at 4096 chars; chunk longer responses.
 func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 	const limit = 4000

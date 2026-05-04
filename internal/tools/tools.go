@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
+	"github.com/berkaycubuk/polaris-agent/internal/scheduler"
 	"github.com/berkaycubuk/polaris-agent/internal/wiki"
 )
 
@@ -45,6 +46,13 @@ func NewRegistry(dataDir string) *Registry {
 }
 
 func (r *Registry) register(t Tool) { r.tools[t.Name()] = t }
+
+// EnableScheduler registers the manage_schedule tool with the given store
+// and firer. Called by cmd/server after the scheduler is constructed,
+// since the scheduler depends on the agent which depends on this registry.
+func (r *Registry) EnableScheduler(store *scheduler.Store, firer scheduleFirer) {
+	r.register(&manageSchedule{store: store, sched: firer})
+}
 
 // SkillEnvNames returns the names of secret SKILL_* env vars detected at
 // startup, sorted. Values stay in subprocess env and are redacted from

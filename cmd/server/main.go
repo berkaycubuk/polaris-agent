@@ -14,12 +14,21 @@ import (
 	"github.com/berkaycubuk/polaris-agent/internal/captioner"
 	"github.com/berkaycubuk/polaris-agent/internal/config"
 	"github.com/berkaycubuk/polaris-agent/internal/llm"
+	"github.com/berkaycubuk/polaris-agent/internal/scheduler"
 	"github.com/berkaycubuk/polaris-agent/internal/server"
 	"github.com/berkaycubuk/polaris-agent/internal/snapshot"
 	"github.com/berkaycubuk/polaris-agent/internal/storage"
 	"github.com/berkaycubuk/polaris-agent/internal/telegram"
 	"github.com/berkaycubuk/polaris-agent/internal/tools"
 )
+
+// agentRunner adapts *agent.Agent to scheduler.Runner. The scheduler doesn't
+// pass attachments, so the variadic argument is left empty.
+type agentRunner struct{ a *agent.Agent }
+
+func (r agentRunner) Chat(ctx context.Context, sessionID, message string) (string, error) {
+	return r.a.Chat(ctx, sessionID, message)
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
@@ -84,18 +93,38 @@ func serve() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	errc := make(chan error, 2)
+	errc := make(chan error, 3)
+
+	// Telegram bot constructed before scheduler so the deliverer can push
+	// cron-job replies to Telegram chats. Scheduler is wired regardless;
+	// non-Telegram origins still get per-run output saved to disk.
+	var tgBot *telegram.Bot
+	if cfg.TelegramBotToken != "" {
+		ownerFile := filepath.Join(cfg.DataDir, ".telegram-owner")
+		tgBot = telegram.New(cfg.TelegramBotToken, a, cfg.TelegramAllowedIDs, ownerFile)
+	}
+
+	store, err := scheduler.NewStore(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("scheduler store: %v", err)
+	}
+	deliverer := scheduler.NewFanoutDeliverer(filepath.Join(store.Dir(), "output"), tgBot)
+	sched := scheduler.New(store, agentRunner{a}, deliverer, 0, 0)
+	registry.EnableScheduler(store, sched)
+	log.Printf("scheduler ready: %d job(s) loaded", len(store.List()))
+
+	go func() {
+		errc <- sched.Run(ctx)
+	}()
 
 	go func() {
 		s := server.New(cfg.HTTPAddr, cfg.AuthToken, a)
 		errc <- s.Run(ctx)
 	}()
 
-	if cfg.TelegramBotToken != "" {
+	if tgBot != nil {
 		go func() {
-			ownerFile := filepath.Join(cfg.DataDir, ".telegram-owner")
-			b := telegram.New(cfg.TelegramBotToken, a, cfg.TelegramAllowedIDs, ownerFile)
-			errc <- b.Run(ctx)
+			errc <- tgBot.Run(ctx)
 		}()
 	}
 

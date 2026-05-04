@@ -106,8 +106,9 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 			return msg.Content, nil
 		}
 
+		toolCtx := session.WithID(ctx, sessionID)
 		for _, tc := range msg.ToolCalls {
-			result, err := a.tools.Run(ctx, tc.Function.Name, tc.Function.Arguments)
+			result, err := a.tools.Run(toolCtx, tc.Function.Name, tc.Function.Arguments)
 			if err != nil {
 				result = fmt.Sprintf("error: %v", err)
 			}
@@ -211,7 +212,13 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	b.WriteString("Update USER.md when you learn lasting facts about your user. Use MEMORY.md for working notes you want to carry across turns.\n")
 	b.WriteString("\n")
 	b.WriteString("# Growing your skills\n")
-	b.WriteString("Skills under skills/ are how you teach future-you. After a non-trivial task — one that took several steps, a tricky workflow you figured out, or a recurring user need — save the approach as a skill via manage_skill(action=\"create\", ...). When you use a skill and find it outdated, incomplete, or wrong, edit it in the same turn with manage_skill(action=\"edit\", ...) — don't wait to be asked. Read skills/skill-builder.md before authoring. Skills you keep current are leverage; stale skills are liabilities. Archive (don't delete) skills that no longer apply.\n")
+	b.WriteString("Skills under skills/ are how you teach future-you. After a non-trivial task — one that took several steps, a tricky workflow you figured out, or a recurring user need — save the approach as a skill via manage_skill(action=\"create\", ...). When you use a skill and find it outdated, incomplete, or wrong, edit it in the same turn with manage_skill(action=\"edit\", ...) — don't wait to be asked. Read skills/skill-builder.md before authoring. Skills you keep current are leverage; stale skills are liabilities. Archive (don't delete) skills that no longer apply.\n\n")
+
+	b.WriteString("# Scheduling background jobs\n")
+	b.WriteString("manage_schedule lets you run a prompt later — once at a specific time, after a duration, or on a recurring interval. Each fired job starts in a fresh session with no chat history, so the prompt must be self-contained.\n")
+	b.WriteString("Use it when the user asks for a reminder, a recurring check-in, or any future task. Replies are auto-delivered back to the originating chat (Telegram chats by default; otherwise saved to schedule/output/). You do NOT need a separate \"send\" step — your reply at fire time IS the message.\n")
+	b.WriteString("Schedule formats: \"30m\", \"2h\", \"1d\" (one-shot), \"every 30m\" / \"every 2h\" (recurring), or RFC3339 timestamps. Cron expressions are not supported.\n")
+	b.WriteString("Cron jobs MUST NOT schedule more cron jobs — the tool blocks recursive scheduling. To stop a job, list to find the id, then remove or pause.\n")
 
 	return b.String(), nil
 }

@@ -100,6 +100,7 @@ All persistent state lives in `DATA_DIR` (mounted as a Docker volume at
 ├── .telegram-owner      — auto-detected Telegram owner chat ID
 ├── wiki/                — agent-grown knowledge base (markdown files)
 ├── skills/              — agent skills (markdown + optional scripts)
+├── schedule/            — scheduled jobs (jobs.json + per-run output/)
 └── secrets/             — user-provided secret files (redacted from output)
 ```
 
@@ -147,6 +148,31 @@ overwritten if the user edits them.
 Scripts use `uv` (https://docs.astral.sh/uv) for Python dependency
 management with a shared global cache.
 
+### Schedule
+
+Background jobs that fire on a schedule and deliver their reply back to
+the originating session. Stored as `schedule/jobs.json` with atomic
+rewrites; each fired job's output (prompt + reply + metadata) is saved
+to `schedule/output/<job_id>/<timestamp>.md`.
+
+A single goroutine ticks every 60s, scans for due jobs, and fires each
+in a fresh agent session (`session_id = "cron:<job_id>"`, no chat
+history). One-shot jobs transition to `done` after firing; recurring
+jobs anchor their next run to `last_run_at`.
+
+Schedule formats:
+- Duration (`30m`, `2h`, `1d`) — one-shot from now
+- Interval (`every 30m`, `every 2h`) — recurring at fixed period
+- RFC3339 timestamp (`2026-02-03T14:00:00Z`) — one-shot at time
+
+Cron expressions are intentionally not supported in v1.
+
+Delivery:
+- `telegram:<chat_id>` origin → reply pushed to that chat via Telegram
+- Other origins (HTTP `cli`, etc.) → output saved to disk only
+- Run errors are recorded to `last_error` and the per-run file but
+  suppressed from the user-facing push.
+
 ### Secrets
 
 Files placed under `secrets/` are available to skill scripts at runtime.
@@ -174,6 +200,20 @@ strip any known secret values before returning to the LLM.
 
 Search the wiki knowledge base. Returns top 3 most relevant chunks using
 TF-IDF scoring.
+
+### manage_schedule
+
+Manage scheduled background jobs. Single compressed action-oriented tool
+with six actions: `create`, `list`, `remove`, `pause`, `resume`, `run`.
+
+- `create` requires `prompt` + `schedule`. Origin is captured from the
+  active session ID at create time and used as the delivery target.
+- `list` returns id, name, schedule, state, next/last run for every job.
+- `remove` deletes a job by id. `pause`/`resume` toggle whether it fires.
+- `run` fires a job immediately (used for testing).
+
+Cron-originated sessions (`cron:*`) cannot create new jobs — the tool
+blocks recursive scheduling.
 
 ### manage_memory
 
