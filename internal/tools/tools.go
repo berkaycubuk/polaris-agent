@@ -39,6 +39,7 @@ func NewRegistry(dataDir string) *Registry {
 	r.register(&writeFile{dataDir: dataDir})
 	r.register(&bashTool{dataDir: dataDir, redactor: redactor})
 	r.register(&searchWiki{dataDir: dataDir})
+	r.register(&manageSkill{dataDir: dataDir})
 	return r
 }
 

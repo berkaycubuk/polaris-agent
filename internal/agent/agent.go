@@ -180,6 +180,9 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	fmt.Fprintf(&b, "Data directory: %s\n", a.dataDir)
 	b.WriteString("Use search_wiki before answering from memory; write new knowledge into wiki/<topic>.md.\n")
 	b.WriteString("Update USER.md when you learn lasting facts about your user.\n")
+	b.WriteString("\n")
+	b.WriteString("# Growing your skills\n")
+	b.WriteString("Skills under skills/ are how you teach future-you. After a non-trivial task — one that took several steps, a tricky workflow you figured out, or a recurring user need — save the approach as a skill via manage_skill(action=\"create\", ...). When you use a skill and find it outdated, incomplete, or wrong, edit it in the same turn with manage_skill(action=\"edit\", ...) — don't wait to be asked. Read skills/skill-builder.md before authoring. Skills you keep current are leverage; stale skills are liabilities. Archive (don't delete) skills that no longer apply.\n")
 
 	return b.String(), nil
 }

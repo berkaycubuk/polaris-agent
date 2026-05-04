@@ -195,7 +195,8 @@ apply.
 
 ## Authoring procedure
 
-When the user asks for a new skill, follow these steps:
+When the user asks for a new skill — or when you finish a non-trivial task
+worth preserving — follow these steps:
 
 1. **Clarify scope** in one short turn if the request is broad. Ask only
    what you can't reasonably assume (e.g. "one shared list, or per-store?").
@@ -214,10 +215,15 @@ When the user asks for a new skill, follow these steps:
    clients, data parsing that would be ugly in shell). If yes, pick the
    single-file PEP 723 layout for one script, the directory layout
    otherwise.
-6. **Draft the skill file** following the structure above. Write it to
-   `skills/<name>.md` (or `skills/<name>/SKILL.md`) with `write_file`.
-   For script-bearing skills, also write the script(s) and run the `uv`
-   setup commands once so the first real use doesn't pay setup cost.
+6. **Write the skill via `manage_skill`** — pass the body without
+   frontmatter; the tool generates it from `path` + `description`. Use
+   `manage_skill(action="create", path="<name>.md", ...)` for flat skills,
+   or `path="<name>/SKILL.md"` for directory skills (then write any scripts
+   alongside with `write_file` and run the `uv` setup once). To revise a
+   skill in place use `manage_skill(action="edit", ...)`. To retire one
+   use `manage_skill(action="archive", ...)` — this moves it to
+   `skills/.archive/`, never deletes. Reach for plain `write_file` only
+   for non-skill files (scripts, wiki entries, data).
 7. **Seed any data files** the skill expects (e.g. an empty
    `wiki/shopping-list.md` with the right header), so the first real use
    doesn't fail on a missing file.
