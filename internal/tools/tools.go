@@ -199,8 +199,11 @@ func (t *bashTool) Spec() llm.Tool {
 	return llm.Tool{
 		Type: "function",
 		Function: llm.ToolFunc{
-			Name:        "bash",
-			Description: "Execute a bash command inside the agent's container. Runs from the data directory by default.",
+			Name: "bash",
+			Description: "Execute a bash command inside the agent's container. Runs from the data directory by default. " +
+				"Refuses obviously catastrophic commands (rm -rf /, find -delete, mkfs, etc.) and refuses to mutate " +
+				"SOUL.md, USER.md, or anything under skills/ — use write_file for those files and manage_skill for skills. " +
+				"Reading protected paths (cat, ls, grep) is allowed. Every invocation is logged to .bash-audit.log.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -226,6 +229,10 @@ func (t *bashTool) Run(ctx context.Context, args string) (string, error) {
 	if a.Command == "" {
 		return "", fmt.Errorf("command is required")
 	}
+	if err := safeguard(a.Command); err != nil {
+		t.audit(a.Command, "blocked", err.Error())
+		return "", err
+	}
 	timeout := a.Timeout
 	if timeout <= 0 {
 		timeout = 30
@@ -240,6 +247,11 @@ func (t *bashTool) Run(ctx context.Context, args string) (string, error) {
 	cmd.Env = t.redactor.ChildEnv()
 	out, err := cmd.CombinedOutput()
 	result := string(out)
+	status := "ok"
+	if err != nil {
+		status = fmt.Sprintf("err: %v", err)
+	}
+	t.audit(a.Command, status, "")
 	if err != nil {
 		return fmt.Sprintf("exit error: %v\n%s", err, result), nil
 	}
@@ -247,6 +259,25 @@ func (t *bashTool) Run(ctx context.Context, args string) (string, error) {
 		return "(no output)", nil
 	}
 	return result, nil
+}
+
+// audit appends a one-line record to <dataDir>/.bash-audit.log. Failures
+// are best-effort — never block the tool call on logging.
+func (t *bashTool) audit(command, status, blockedReason string) {
+	path := filepath.Join(t.dataDir, ".bash-audit.log")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	// Replace newlines so each record stays one line.
+	flat := strings.ReplaceAll(command, "\n", "\\n")
+	stamp := time.Now().UTC().Format(time.RFC3339)
+	if blockedReason != "" {
+		_, _ = fmt.Fprintf(f, "%s\t%s\t%s\t%s\n", stamp, status, flat, blockedReason)
+	} else {
+		_, _ = fmt.Fprintf(f, "%s\t%s\t%s\n", stamp, status, flat)
+	}
 }
 
 // ---- search_wiki ----
