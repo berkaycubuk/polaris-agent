@@ -25,13 +25,12 @@ type Deliverer interface {
 
 // Scheduler ticks at a fixed interval, fires due jobs, and delivers replies.
 type Scheduler struct {
-	store    *Store
-	runner   Runner
-	deliver  Deliverer
-	tick     time.Duration
-	fireSem  chan struct{} // bounds in-flight job runs
-	closeMu  sync.Mutex
-	wg       sync.WaitGroup
+	store   *Store
+	runner  Runner
+	deliver Deliverer
+	tick    time.Duration
+	fireSem chan struct{} // bounds in-flight job runs
+	wg      sync.WaitGroup
 }
 
 // New constructs a scheduler. tick is how often to scan for due jobs;

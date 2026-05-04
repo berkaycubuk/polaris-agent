@@ -81,8 +81,8 @@ func TestManageSchedule_CreateRefusesRecursive(t *testing.T) {
 func TestManageSchedule_CreateRequiresFields(t *testing.T) {
 	tool, _, _ := newScheduleTool(t)
 	cases := []string{
-		`{"action":"create","schedule":"30m"}`,        // missing prompt
-		`{"action":"create","prompt":"x"}`,             // missing schedule
+		`{"action":"create","schedule":"30m"}`,                 // missing prompt
+		`{"action":"create","prompt":"x"}`,                     // missing schedule
 		`{"action":"create","prompt":"x","schedule":"banana"}`, // bad schedule
 	}
 	for _, c := range cases {

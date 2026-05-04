@@ -8,8 +8,8 @@ type Job struct {
 	Name      string    `json:"name,omitempty"`
 	Prompt    string    `json:"prompt"`
 	Schedule  Schedule  `json:"schedule"`
-	Origin    string    `json:"origin"`           // session ID at create — also the delivery target
-	State     string    `json:"state"`            // "scheduled", "paused", "done"
+	Origin    string    `json:"origin"` // session ID at create — also the delivery target
+	State     string    `json:"state"`  // "scheduled", "paused", "done"
 	CreatedAt time.Time `json:"created_at"`
 	LastRunAt time.Time `json:"last_run_at,omitzero"`
 	NextRunAt time.Time `json:"next_run_at,omitzero"`

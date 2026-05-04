@@ -10,10 +10,10 @@ import (
 )
 
 type fakeRunner struct {
-	mu     sync.Mutex
-	fired  []string
-	reply  string
-	err    error
+	mu    sync.Mutex
+	fired []string
+	reply string
+	err   error
 }
 
 func (f *fakeRunner) Chat(_ context.Context, sessionID, _ string) (string, error) {
@@ -102,10 +102,12 @@ func TestScheduler_RecordsRunError(t *testing.T) {
 func TestScheduler_SkipsPaused(t *testing.T) {
 	store, _ := NewStore(t.TempDir())
 	past := time.Now().UTC().Add(-1 * time.Second)
-	store.Add(Job{
+	if _, err := store.Add(Job{
 		Schedule: Schedule{Kind: "once", RunAt: &past},
 		State:    StatePaused,
-	})
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
 	runner := &fakeRunner{}
 	s := New(store, runner, &captureDeliverer{}, 50*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)

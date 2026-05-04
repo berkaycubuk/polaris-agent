@@ -76,14 +76,14 @@ func readLine(promptStyled string, history []string) (string, error) {
 		}
 		c := b[0]
 
-		switch {
-		case c == '\r' || c == '\n':
+		switch c {
+		case '\r', '\n':
 			fmt.Print("\r\n")
 			return string(buf), nil
-		case c == 0x03: // Ctrl-C
+		case 0x03: // Ctrl-C
 			fmt.Print("^C\r\n")
 			return "", errInterrupted
-		case c == 0x04: // Ctrl-D
+		case 0x04: // Ctrl-D
 			if len(buf) == 0 {
 				fmt.Print("\r\n")
 				return "", io.EOF
@@ -92,36 +92,36 @@ func readLine(promptStyled string, history []string) (string, error) {
 				buf = append(buf[:cursor], buf[cursor+1:]...)
 				redraw()
 			}
-		case c == 0x7f || c == 0x08: // Backspace / DEL
+		case 0x7f, 0x08: // Backspace / DEL
 			if cursor > 0 {
 				buf = append(buf[:cursor-1], buf[cursor:]...)
 				cursor--
 				redraw()
 			}
-		case c == 0x01: // Ctrl-A
+		case 0x01: // Ctrl-A
 			cursor = 0
 			redraw()
-		case c == 0x05: // Ctrl-E
+		case 0x05: // Ctrl-E
 			cursor = len(buf)
 			redraw()
-		case c == 0x02: // Ctrl-B
+		case 0x02: // Ctrl-B
 			if cursor > 0 {
 				cursor--
 				redraw()
 			}
-		case c == 0x06: // Ctrl-F
+		case 0x06: // Ctrl-F
 			if cursor < len(buf) {
 				cursor++
 				redraw()
 			}
-		case c == 0x0B: // Ctrl-K: kill to end
+		case 0x0B: // Ctrl-K: kill to end
 			buf = buf[:cursor]
 			redraw()
-		case c == 0x15: // Ctrl-U: kill to start
+		case 0x15: // Ctrl-U: kill to start
 			buf = buf[cursor:]
 			cursor = 0
 			redraw()
-		case c == 0x17: // Ctrl-W: delete previous word
+		case 0x17: // Ctrl-W: delete previous word
 			i := cursor
 			for i > 0 && buf[i-1] == ' ' {
 				i--
@@ -132,10 +132,10 @@ func readLine(promptStyled string, history []string) (string, error) {
 			buf = append(buf[:i], buf[cursor:]...)
 			cursor = i
 			redraw()
-		case c == 0x0C: // Ctrl-L: clear screen
+		case 0x0C: // Ctrl-L: clear screen
 			fmt.Print("\033[2J\033[H")
 			redraw()
-		case c == 0x1B: // ESC — start of an arrow / function-key sequence
+		case 0x1B: // ESC — start of an arrow / function-key sequence
 			var s1 [1]byte
 			n1, _ := os.Stdin.Read(s1[:])
 			if n1 == 0 || (s1[0] != '[' && s1[0] != 'O') {
