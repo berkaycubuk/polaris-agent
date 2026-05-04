@@ -66,7 +66,7 @@ func TestRegistrySpecs(t *testing.T) {
 	for _, s := range specs {
 		names[s.Function.Name] = true
 	}
-	for _, want := range []string{"read_file", "write_file", "bash", "search_wiki"} {
+	for _, want := range []string{"read_file", "write_file", "bash", "search_wiki", "manage_memory"} {
 		if !names[want] {
 			t.Errorf("missing tool spec: %s", want)
 		}
@@ -160,6 +160,24 @@ func TestWriteFile_Escape(t *testing.T) {
 	_, err := r.Run(context.Background(), "write_file", `{"path":"/tmp/evil.txt","content":"nope"}`)
 	if err == nil {
 		t.Fatal("expected path escape error")
+	}
+}
+
+func TestWriteFile_RejectsMemoryFiles(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(dir)
+	for _, path := range []string{"MEMORY.md", "USER.md"} {
+		_, err := r.Run(context.Background(), "write_file",
+			`{"path":"`+path+`","content":"hi"}`)
+		if err == nil {
+			t.Fatalf("write_file should reject %s", path)
+		}
+		if !strings.Contains(err.Error(), "manage_memory") {
+			t.Fatalf("rejection should redirect to manage_memory: %v", err)
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, path)); statErr == nil {
+			t.Fatalf("%s should not have been written", path)
+		}
 	}
 }
 

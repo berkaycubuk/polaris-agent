@@ -35,6 +35,7 @@ func safeguard(command string) error {
 var protectedFiles = []string{
 	"SOUL.md",
 	"USER.md",
+	"MEMORY.md",
 }
 
 // protectedDirs must be modified through manage_skill, never bash. .archive

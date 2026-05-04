@@ -95,7 +95,8 @@ All persistent state lives in `DATA_DIR` (mounted as a Docker volume at
 ```
 /app/data/
 ├── SOUL.md              — agent identity, injected at top of system prompt
-├── USER.md              — user preferences and communication style
+├── USER.md              — what the agent knows about the user (1375-char cap)
+├── MEMORY.md            — agent's personal cross-turn notes (2200-char cap)
 ├── .telegram-owner      — auto-detected Telegram owner chat ID
 ├── wiki/                — agent-grown knowledge base (markdown files)
 ├── skills/              — agent skills (markdown + optional scripts)
@@ -107,10 +108,22 @@ All persistent state lives in `DATA_DIR` (mounted as a Docker volume at
 Stores the agent's core identity and personality. Injected at the top of
 the system prompt. If missing, a built-in default personality is used.
 
-### USER.md
+### USER.md & MEMORY.md (hot memory)
 
-Stores lasting facts about the user — preferences, communication style,
-recurring topics. The agent updates this as it learns.
+Two short markdown files that load into every system prompt and form the
+agent's hot working memory:
+
+- **USER.md** (1375-char cap, ~500 tokens) — lasting facts about the user.
+- **MEMORY.md** (2200-char cap, ~800 tokens) — the agent's personal notes
+  carried across turns (in-progress ideas, open questions, observed patterns).
+
+Both are written exclusively through the `manage_memory` tool, which
+enforces the cap. When a write would exceed the limit, the agent must
+summarize older entries or move them into `wiki/<topic>.md` for long-term
+storage and retry. The wiki is the unbounded backing store; USER.md and
+MEMORY.md are deliberately tight so every turn pays a small fixed cost.
+
+The agent is told to save proactively — not wait to be asked.
 
 ### Wiki
 
@@ -162,6 +175,22 @@ strip any known secret values before returning to the LLM.
 Search the wiki knowledge base. Returns top 3 most relevant chunks using
 TF-IDF scoring.
 
+### manage_memory
+
+Read and write the hot-memory files (`USER.md` and `MEMORY.md`). Three
+actions:
+
+- **`add`** — append a new entry, preserving existing content. The default
+  for new notes; the agent cannot accidentally drop earlier memories.
+- **`rewrite`** — replace the whole file. Used only when intentionally
+  consolidating, summarizing, or trimming (typically after an over-cap
+  error from `add`).
+- **`view`** — return current contents and char usage.
+
+Enforces the per-file char cap on every write and rejects overflows,
+prompting the agent to summarize via `rewrite` or push older entries
+into the wiki.
+
 ## Secret redaction
 
 The agent runs a secret redaction system to prevent the LLM from echoing
@@ -188,11 +217,13 @@ arbitrary strings — the HTTP API passes them directly, Telegram uses
 On each new session, the system prompt is built from:
 
 1. `SOUL.md` (or built-in default)
-2. `USER.md` (if present)
-3. Loaded skills list (name + description + file path)
-4. Available secret/public env var names (values never included)
-5. Available secrets files
-6. Working notes (data directory path, wiki usage instructions)
+2. `USER.md` (with current/cap char usage)
+3. `MEMORY.md` (with current/cap char usage)
+4. Memory budget instructions (caps, manage_memory routing, wiki overflow)
+5. Loaded skills list (name + description + file path)
+6. Available secret/public env var names (values never included)
+7. Available secrets files
+8. Working notes (data directory path, wiki usage instructions)
 
 ## Architecture
 

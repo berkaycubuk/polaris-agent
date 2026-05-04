@@ -40,6 +40,7 @@ func NewRegistry(dataDir string) *Registry {
 	r.register(&bashTool{dataDir: dataDir, redactor: redactor})
 	r.register(&searchWiki{dataDir: dataDir})
 	r.register(&manageSkill{dataDir: dataDir})
+	r.register(&manageMemory{dataDir: dataDir})
 	return r
 }
 
@@ -82,6 +83,14 @@ func (r *Registry) Run(ctx context.Context, name, args string) (string, error) {
 		return "", err
 	}
 	return r.redactor.Redact(out), nil
+}
+
+// memoryFiles must be written through manage_memory, not write_file. The
+// dedicated tool enforces char caps and treats them as the agent's hot
+// working memory rather than free-form files.
+var memoryFiles = map[string]bool{
+	"MEMORY.md": true,
+	"USER.md":   true,
 }
 
 // resolvePath joins relative paths under DataDir and prevents escape.
@@ -178,6 +187,9 @@ func (t *writeFile) Run(_ context.Context, args string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if memoryFiles[filepath.Clean(a.Path)] {
+		return "", fmt.Errorf("%s is managed by the manage_memory tool, not write_file — call manage_memory(scope=%q, content=...) instead", a.Path, strings.TrimSuffix(strings.ToLower(filepath.Clean(a.Path)), ".md"))
+	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return "", err
 	}
@@ -202,7 +214,7 @@ func (t *bashTool) Spec() llm.Tool {
 			Name: "bash",
 			Description: "Execute a bash command inside the agent's container. Runs from the data directory by default. " +
 				"Refuses obviously catastrophic commands (rm -rf /, find -delete, mkfs, etc.) and refuses to mutate " +
-				"SOUL.md, USER.md, or anything under skills/ — use write_file for those files and manage_skill for skills. " +
+				"SOUL.md, USER.md, MEMORY.md, or anything under skills/ — use write_file for those files and manage_skill for skills. " +
 				"Reading protected paths (cat, ls, grep) is allowed. Every invocation is logged to .bash-audit.log.",
 			Parameters: map[string]any{
 				"type": "object",

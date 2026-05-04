@@ -144,11 +144,33 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	b.WriteString(soul)
 	b.WriteString("\n\n")
 
-	if user := readOr(filepath.Join(a.dataDir, "USER.md"), ""); user != "" {
-		b.WriteString("# What you know about your user\n")
+	const userLimit = 1375
+	const memoryLimit = 2200
+
+	user := readOr(filepath.Join(a.dataDir, "USER.md"), "")
+	fmt.Fprintf(&b, "# What you know about your user (USER.md, %d/%d chars)\n", len(user), userLimit)
+	if user != "" {
 		b.WriteString(user)
-		b.WriteString("\n\n")
+	} else {
+		b.WriteString("(empty — fill in lasting facts about your user as you learn them)")
 	}
+	b.WriteString("\n\n")
+
+	memory := readOr(filepath.Join(a.dataDir, "MEMORY.md"), "")
+	fmt.Fprintf(&b, "# Your personal notes (MEMORY.md, %d/%d chars)\n", len(memory), memoryLimit)
+	if memory != "" {
+		b.WriteString(memory)
+	} else {
+		b.WriteString("(empty — your scratchpad for things worth remembering across turns)")
+	}
+	b.WriteString("\n\n")
+
+	b.WriteString("# Managing your memory\n")
+	fmt.Fprintf(&b, "USER.md is capped at %d chars; MEMORY.md is capped at %d chars. Both files load into every system prompt, so they must stay tight.\n", userLimit, memoryLimit)
+	b.WriteString("Write to them ONLY through the manage_memory tool — write_file is blocked for these paths.\n")
+	b.WriteString("Default to action=\"add\" — it appends a new entry without touching existing notes, so you cannot accidentally drop earlier memories. Use action=\"rewrite\" only when you are intentionally consolidating, summarizing, or trimming (e.g. after an over-cap error). Use action=\"view\" if you need a fresh read.\n")
+	b.WriteString("Save proactively, don't wait to be asked. When you learn a lasting fact about your user → manage_memory(action=\"add\", scope=\"user\"). When you want to carry a working note across turns (an in-progress idea, an open question, a pattern you noticed about how the user works) → manage_memory(action=\"add\", scope=\"memory\").\n")
+	b.WriteString("When an add would exceed the cap, the tool errors. Then either: (a) rewrite the file with older entries summarized, or (b) move older entries into wiki/<topic>.md (your unbounded long-term store), rewrite the hot file with what's left, and retry the add. Use search_wiki to recall what you moved. The cap is a forcing function: stale notes belong in the wiki, not in your hot memory.\n\n")
 
 	skillEntries, err := skills.Load(filepath.Join(a.dataDir, "skills"))
 	if err != nil {
@@ -186,7 +208,7 @@ func (a *Agent) buildSystemPrompt() (string, error) {
 	b.WriteString("# Working notes\n")
 	fmt.Fprintf(&b, "Data directory: %s\n", a.dataDir)
 	b.WriteString("Use search_wiki before answering from memory; write new knowledge into wiki/<topic>.md.\n")
-	b.WriteString("Update USER.md when you learn lasting facts about your user.\n")
+	b.WriteString("Update USER.md when you learn lasting facts about your user. Use MEMORY.md for working notes you want to carry across turns.\n")
 	b.WriteString("\n")
 	b.WriteString("# Growing your skills\n")
 	b.WriteString("Skills under skills/ are how you teach future-you. After a non-trivial task — one that took several steps, a tricky workflow you figured out, or a recurring user need — save the approach as a skill via manage_skill(action=\"create\", ...). When you use a skill and find it outdated, incomplete, or wrong, edit it in the same turn with manage_skill(action=\"edit\", ...) — don't wait to be asked. Read skills/skill-builder.md before authoring. Skills you keep current are leverage; stale skills are liabilities. Archive (don't delete) skills that no longer apply.\n")
