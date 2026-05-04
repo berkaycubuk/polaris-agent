@@ -39,8 +39,8 @@ docker-logs: ## Tail agent logs
 
 # ── Release ────────────────────────────────────────────────────────────
 
-release-dryrun: ## Dry-run a goreleaser release (no publish)
-	goreleaser release --snapshot --clean
+release-dryrun: ## Dry-run a goreleaser release (no publish, skips docker)
+	goreleaser release --snapshot --clean --skip=docker
 
 release-build: ## Build all release binaries without publishing
 	goreleaser build --snapshot --clean

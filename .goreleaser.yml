@@ -36,7 +36,10 @@ builds:
       - arm64
 
 archives:
-  - name_template: >-
+  - id: polaris
+    ids:
+      - polaris
+    name_template: >-
       polaris_
       {{- .Version }}_
       {{- .Os }}_

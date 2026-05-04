@@ -20,3 +20,19 @@ func makeRaw() (*termState, error) {
 }
 
 func restore(*termState) {}
+
+func readRune() (rune, error) {
+	return 0, fmt.Errorf("raw terminal not supported on this platform")
+}
+
+func readEscapeSeq() string { return "" }
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
