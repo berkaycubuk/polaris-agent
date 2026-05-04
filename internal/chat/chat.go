@@ -149,6 +149,7 @@ func handleCommand(line string, opts Options) (handled bool, exit bool) {
 }
 
 func submitMessage(opts Options, message string) error {
+	fmt.Println()
 	sp := newSpinner()
 	sp.start()
 
