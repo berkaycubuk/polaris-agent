@@ -8,17 +8,34 @@ See `SPECS.md` for the full design.
 ## Requirements
 
 - [Docker](https://docs.docker.com/get-docker/) with Docker Compose
-- [Go](https://go.dev/dl/) 1.24+ (to build the CLI from source)
+- [Go](https://go.dev/dl/) 1.24+ (only if building the CLI from source)
 
-## Quick start
+## Install
+
+Install the `polaris` CLI with one line (Linux and macOS, amd64/arm64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/berkaycubuk/polaris-agent/main/scripts/install.sh | sh
+```
+
+Pin a specific version or change the install directory:
+
+```bash
+POLARIS_VERSION=v0.1.0 POLARIS_INSTALL=$HOME/.local/bin \
+  curl -fsSL https://raw.githubusercontent.com/berkaycubuk/polaris-agent/main/scripts/install.sh | sh
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/berkaycubuk/polaris-agent.git
 cd polaris-agent
-
-# Build and install the CLI
 go install ./cmd/polaris
+```
 
+## Quick start
+
+```bash
 # Configure the agent
 polaris setup
 
