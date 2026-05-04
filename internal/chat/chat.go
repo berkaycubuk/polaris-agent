@@ -167,6 +167,7 @@ func submitMessage(opts Options, message string) error {
 func printReply(reply string) {
 	const indent = "  "
 	width := wrapWidth()
+	fmt.Printf("  %sPolaris%s\n", cyan, reset)
 	for _, line := range strings.Split(strings.TrimRight(reply, "\n"), "\n") {
 		if line == "" {
 			fmt.Println()
