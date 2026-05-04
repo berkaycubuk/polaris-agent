@@ -3,9 +3,9 @@
 package chat
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,22 +71,34 @@ func Run(opts Options) error {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		if rawCleanup != nil {
+			rawCleanup()
+		}
 		fmt.Print("\n  Bye!\n\n")
 		os.Exit(0)
 	}()
 
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 64*1024), 1<<20)
+	prompt := fmt.Sprintf("%s  ❯ %s", cyan, reset)
+	var history []string
 
 	for {
-		fmt.Printf("%s  ❯ %s", cyan, reset)
-		if !scanner.Scan() {
-			fmt.Print("\n  Bye!\n\n")
+		line, err := readLine(prompt, history)
+		if errors.Is(err, io.EOF) {
+			fmt.Print("  Bye!\n\n")
 			return nil
 		}
-		line := strings.TrimSpace(scanner.Text())
+		if errors.Is(err, errInterrupted) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
+		}
+		if n := len(history); n == 0 || history[n-1] != line {
+			history = append(history, line)
 		}
 
 		handled, exit := handleCommand(line, opts)
