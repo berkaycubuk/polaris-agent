@@ -86,7 +86,12 @@ func serve() {
 	} else {
 		log.Printf("snapshots disabled (GIT_ENABLED=false or git binary missing)")
 	}
-	opts := agent.Options{MaxToolIterations: cfg.MaxToolIterations, Processor: proc, Snapshotter: snap}
+	opts := agent.Options{
+		MaxToolIterations: cfg.MaxToolIterations,
+		MaxHistoryChars:   cfg.MaxHistoryChars,
+		Processor:         proc,
+		Snapshotter:       snap,
+	}
 
 	a := agent.New(llmClient, registry, cfg.DataDir, opts)
 

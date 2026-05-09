@@ -18,6 +18,12 @@ type Config struct {
 	HTTPAddr          string
 	MaxToolIterations int
 
+	// MaxHistoryChars caps a session's chat history (sum of message
+	// content). When exceeded, the agent drops oldest exchanges before
+	// the next LLM call. Default 80000 chars (~20k tokens) leaves headroom
+	// under most providers' context windows. Set to 0 to disable pruning.
+	MaxHistoryChars int
+
 	// Image captioner. All three must be set together to enable image
 	// understanding; if unset, image attachments are ignored with a notice.
 	ImageCaptionBaseURL string
@@ -56,6 +62,7 @@ func Load() (*Config, error) {
 		DataDir:           getenvDefault("DATA_DIR", "/app/data"),
 		HTTPAddr:          getenvDefault("HTTP_ADDR", ":8080"),
 		MaxToolIterations: getenvInt("MAX_TOOL_ITERATIONS", 30),
+		MaxHistoryChars:   getenvInt("MAX_HISTORY_CHARS", 80000),
 
 		ImageCaptionBaseURL: os.Getenv("IMAGE_CAPTION_BASE_URL"),
 		ImageCaptionModel:   os.Getenv("IMAGE_CAPTION_MODEL"),

@@ -73,6 +73,7 @@ Env vars already set in the environment take precedence over `.env`.
 | `DATA_DIR` | `/app/data` | Root directory for all persistent data |
 | `HTTP_ADDR` | `:8080` | HTTP listen address |
 | `MAX_TOOL_ITERATIONS` | `30` | Max tool calls per turn before giving up |
+| `MAX_HISTORY_CHARS` | `80000` | Soft cap on per-session chat history (sum of message content). When exceeded, oldest exchanges are dropped before the next LLM call. Set to `0` to disable. |
 | `TELEGRAM_BOT_TOKEN` | _(empty)_ | Enables Telegram interface when set |
 | `TELEGRAM_ALLOWED_USERS` | _(empty)_ | Comma-separated allowed Telegram chat IDs (see access control above) |
 | `IMAGE_CAPTION_BASE_URL` | _(empty)_ | Vision model endpoint (set all 3 or none) |

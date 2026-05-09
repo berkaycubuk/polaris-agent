@@ -32,6 +32,7 @@ type Agent struct {
 	tools             *tools.Registry
 	dataDir           string
 	maxToolIterations int
+	maxHistoryChars   int
 	sessions          *session.Store
 	processor         *attachment.Processor
 	snap              *snapshot.Snapshotter
@@ -39,6 +40,7 @@ type Agent struct {
 
 type Options struct {
 	MaxToolIterations int
+	MaxHistoryChars   int // 0 disables pruning; default 80000
 	Processor         *attachment.Processor
 	Snapshotter       *snapshot.Snapshotter
 }
@@ -47,11 +49,17 @@ func New(c *llm.Client, t *tools.Registry, dataDir string, opts Options) *Agent 
 	if opts.MaxToolIterations <= 0 {
 		opts.MaxToolIterations = 30
 	}
+	if opts.MaxHistoryChars < 0 {
+		opts.MaxHistoryChars = 0 // negative treated as "disabled"
+	}
+	// 0 leaves pruning disabled. cmd/server passes Config.MaxHistoryChars
+	// (default 80000) so production runs always get a cap.
 	return &Agent{
 		llm:               c,
 		tools:             t,
 		dataDir:           dataDir,
 		maxToolIterations: opts.MaxToolIterations,
+		maxHistoryChars:   opts.MaxHistoryChars,
 		sessions:          session.NewStore(),
 		processor:         opts.Processor,
 		snap:              opts.Snapshotter,
@@ -90,11 +98,12 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 	specs := a.tools.Specs()
 
 	for i := 0; i < a.maxToolIterations; i++ {
-		msg, err := a.llm.Chat(ctx, history, specs)
+		history = pruneHistory(history, a.maxHistoryChars)
+		msg, newHistory, err := a.callLLM(ctx, history, specs)
 		if err != nil {
 			return "", err
 		}
-		history = append(history, *msg)
+		history = append(newHistory, *msg)
 
 		if len(msg.ToolCalls) == 0 {
 			if sessionID != "" {
@@ -122,6 +131,34 @@ func (a *Agent) Chat(ctx context.Context, sessionID, userMessage string, attachm
 		}
 	}
 	return "", fmt.Errorf("agent exceeded %d tool iterations", a.maxToolIterations)
+}
+
+// callLLM wraps a.llm.Chat with one retry on context-overflow. On retry
+// it re-prunes with a tighter cap (half the configured max) and returns
+// the surviving slice, so the caller can persist the smaller history for
+// subsequent turns instead of immediately overflowing again. If pruning
+// can't shrink the history further (single huge exchange) the original
+// upstream error is surfaced.
+func (a *Agent) callLLM(ctx context.Context, history []llm.Message, specs []llm.Tool) (*llm.Message, []llm.Message, error) {
+	msg, err := a.llm.Chat(ctx, history, specs)
+	if err == nil {
+		return msg, history, nil
+	}
+	if !looksLikeContextOverflow(err) || a.maxHistoryChars <= 0 {
+		return nil, history, err
+	}
+	tighter := a.maxHistoryChars / 2
+	if tighter < 1 {
+		tighter = 1
+	}
+	pruned := pruneHistory(history, tighter)
+	if historyChars(pruned) >= historyChars(history) {
+		return nil, history, err
+	}
+	log.Printf("agent: context overflow — retrying with %d chars (was %d)",
+		historyChars(pruned), historyChars(history))
+	msg, err = a.llm.Chat(ctx, pruned, specs)
+	return msg, pruned, err
 }
 
 // Reset clears a session's history.
