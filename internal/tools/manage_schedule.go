@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -22,8 +24,9 @@ type scheduleFirer interface {
 // manageSchedule is the agent's interface to the cron scheduler. Single
 // compressed action-oriented tool, mirroring manage_skill / manage_memory.
 type manageSchedule struct {
-	store *scheduler.Store
-	sched scheduleFirer
+	store   *scheduler.Store
+	sched   scheduleFirer
+	dataDir string // root for script files (set by registry; tests can leave empty)
 }
 
 func (t *manageSchedule) Name() string { return "manage_schedule" }
@@ -36,17 +39,23 @@ func (t *manageSchedule) Spec() llm.Tool {
 			Description: "Schedule background jobs that fire later and deliver their reply back to the current chat. " +
 				"Use this when the user asks for a reminder, a recurring check-in, or a future task — anything that " +
 				"should run without them prompting again.\n\n" +
+				"Two kinds of jobs:\n" +
+				"- kind=\"agent\" (default): runs an LLM turn with the given prompt. Use when the work needs reasoning, " +
+				"web/wiki lookups, or tool calls.\n" +
+				"- kind=\"script\": runs a Python script (via `uv run`) and pipes stdout into the chat. Use for " +
+				"deterministic checks (calendar fetch, scrape, ping) where invoking an LLM is overkill or error-prone. " +
+				"Stderr is hidden so debug prints (file=sys.stderr) don't reach the user. Empty stdout = no message. " +
+				"PEP 723 inline deps work; secrets in SKILL_*/secrets/ are available.\n\n" +
 				"Actions:\n" +
-				"- create: schedule a new job (requires prompt + schedule)\n" +
-				"- list: show all jobs (id, name, schedule, state, next run)\n" +
-				"- remove: delete a job by id\n" +
+				"- create: schedule a new job. Agent jobs need prompt; script jobs need script (the .py source).\n" +
+				"- list: show all jobs (id, name, kind, schedule, state, next run)\n" +
+				"- remove: delete a job by id (script files are deleted too)\n" +
 				"- pause / resume: toggle whether a job fires\n" +
 				"- run: fire a job immediately (for testing)\n\n" +
 				"Schedule formats: \"30m\", \"2h\", \"1d\" (one-shot from now); \"every 30m\", \"every 2h\" (recurring); " +
 				"or an RFC3339 timestamp like \"2026-02-03T14:00:00Z\". Cron expressions are not supported.\n\n" +
-				"Each fired job runs in a fresh session with no chat history, so the prompt MUST be self-contained — " +
-				"include any context the job needs. Do not schedule jobs that schedule more jobs (recursion is " +
-				"forbidden). To stop a job the user no longer wants, list first to find the id, then remove.",
+				"Agent jobs run in a fresh session with no chat history — the prompt MUST be self-contained. " +
+				"Cron-originated runs cannot create more jobs (no recursion).",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -59,9 +68,18 @@ func (t *manageSchedule) Spec() llm.Tool {
 						"type":        "string",
 						"description": "Required for remove/pause/resume/run.",
 					},
+					"kind": map[string]any{
+						"type":        "string",
+						"enum":        []string{"agent", "script"},
+						"description": "Job kind for create. Defaults to \"agent\".",
+					},
 					"prompt": map[string]any{
 						"type":        "string",
-						"description": "Required for create. The full self-contained prompt the future agent run will execute.",
+						"description": "Required for create when kind=\"agent\". The full self-contained prompt the future agent run will execute.",
+					},
+					"script": map[string]any{
+						"type":        "string",
+						"description": "Required for create when kind=\"script\". The full Python source. The tool writes it to schedule/scripts/<job_id>.py and runs it via `uv run`. Whatever the script prints to stdout becomes the chat message.",
 					},
 					"schedule": map[string]any{
 						"type":        "string",
@@ -81,7 +99,9 @@ func (t *manageSchedule) Spec() llm.Tool {
 type scheduleArgs struct {
 	Action   string `json:"action"`
 	JobID    string `json:"job_id"`
+	Kind     string `json:"kind"`
 	Prompt   string `json:"prompt"`
+	Script   string `json:"script"`
 	Schedule string `json:"schedule"`
 	Name     string `json:"name"`
 }
@@ -112,8 +132,30 @@ func (t *manageSchedule) Run(ctx context.Context, args string) (string, error) {
 }
 
 func (t *manageSchedule) create(ctx context.Context, a scheduleArgs) (string, error) {
-	if a.Prompt == "" {
-		return "", fmt.Errorf("prompt is required")
+	kind := a.Kind
+	if kind == "" {
+		kind = scheduler.KindAgent
+	}
+	switch kind {
+	case scheduler.KindAgent:
+		if a.Prompt == "" {
+			return "", fmt.Errorf("prompt is required for kind=\"agent\"")
+		}
+		if a.Script != "" {
+			return "", fmt.Errorf("script is only valid with kind=\"script\"")
+		}
+	case scheduler.KindScript:
+		if a.Script == "" {
+			return "", fmt.Errorf("script is required for kind=\"script\"")
+		}
+		if a.Prompt != "" {
+			return "", fmt.Errorf("prompt is only valid with kind=\"agent\"")
+		}
+		if t.dataDir == "" {
+			return "", fmt.Errorf("script jobs require a data directory — not available in this context")
+		}
+	default:
+		return "", fmt.Errorf("unknown kind %q (valid: agent, script)", a.Kind)
 	}
 	if a.Schedule == "" {
 		return "", fmt.Errorf("schedule is required")
@@ -132,6 +174,7 @@ func (t *manageSchedule) create(ctx context.Context, a scheduleArgs) (string, er
 	now := time.Now().UTC()
 	job := scheduler.Job{
 		Name:      a.Name,
+		Kind:      kind,
 		Prompt:    a.Prompt,
 		Schedule:  sch,
 		Origin:    origin,
@@ -143,6 +186,30 @@ func (t *manageSchedule) create(ctx context.Context, a scheduleArgs) (string, er
 	if err != nil {
 		return "", err
 	}
+
+	// Script jobs need their body written to disk after the job ID is
+	// assigned; we then update the job with the resolved path. If anything
+	// here fails, roll back the job so we don't leave a broken record.
+	if kind == scheduler.KindScript {
+		rel := filepath.Join("schedule", "scripts", saved.ID+".py")
+		abs := filepath.Join(t.dataDir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			_ = t.store.Remove(saved.ID)
+			return "", fmt.Errorf("create scripts dir: %w", err)
+		}
+		if err := os.WriteFile(abs, []byte(a.Script), 0o755); err != nil {
+			_ = t.store.Remove(saved.ID)
+			return "", fmt.Errorf("write script: %w", err)
+		}
+		updated, err := t.store.Update(saved.ID, func(j *scheduler.Job) { j.Script = rel })
+		if err != nil {
+			_ = os.Remove(abs)
+			_ = t.store.Remove(saved.ID)
+			return "", err
+		}
+		saved = updated
+	}
+
 	return formatJob(*saved), nil
 }
 
@@ -163,8 +230,17 @@ func (t *manageSchedule) remove(id string) (string, error) {
 	if id == "" {
 		return "", fmt.Errorf("job_id is required")
 	}
+	// Capture the job so we can clean up its script file after removal.
+	// A missing job here will surface as ErrNotFound from store.Remove below.
+	scriptPath := ""
+	if j := t.store.Get(id); j != nil && j.Script != "" && t.dataDir != "" {
+		scriptPath = filepath.Join(t.dataDir, j.Script)
+	}
 	if err := t.store.Remove(id); err != nil {
 		return "", err
+	}
+	if scriptPath != "" {
+		_ = os.Remove(scriptPath)
 	}
 	return fmt.Sprintf("Removed %s", id), nil
 }
@@ -212,6 +288,7 @@ func formatJob(j scheduler.Job) string {
 	if j.Name != "" {
 		fmt.Fprintf(&b, "  name: %q", j.Name)
 	}
+	fmt.Fprintf(&b, "  kind: %s", j.EffectiveKind())
 	fmt.Fprintf(&b, "  state: %s", j.State)
 	fmt.Fprintf(&b, "  schedule: %s", j.Schedule.Display)
 	if !j.NextRunAt.IsZero() {
@@ -227,6 +304,9 @@ func formatJob(j scheduler.Job) string {
 		fmt.Fprintf(&b, "  last_error: %q", j.LastError)
 	}
 	fmt.Fprintf(&b, "\n  origin: %s", j.Origin)
+	if j.Script != "" {
+		fmt.Fprintf(&b, "\n  script: %s", j.Script)
+	}
 	if len(j.Prompt) > 0 {
 		preview := j.Prompt
 		if len(preview) > 120 {

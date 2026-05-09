@@ -27,6 +27,7 @@ type Deliverer interface {
 type Scheduler struct {
 	store   *Store
 	runner  Runner
+	scripts ScriptRunner
 	deliver Deliverer
 	tick    time.Duration
 	fireSem chan struct{} // bounds in-flight job runs
@@ -36,7 +37,10 @@ type Scheduler struct {
 // New constructs a scheduler. tick is how often to scan for due jobs;
 // 0 picks a sensible default (60s). maxParallel caps concurrent fires
 // (default 4) so a flurry of due jobs doesn't fork-bomb the LLM.
-func New(store *Store, runner Runner, deliver Deliverer, tick time.Duration, maxParallel int) *Scheduler {
+//
+// scripts may be nil — in that case script-kind jobs fail with a clear
+// error at fire time rather than silently doing nothing.
+func New(store *Store, runner Runner, scripts ScriptRunner, deliver Deliverer, tick time.Duration, maxParallel int) *Scheduler {
 	if tick <= 0 {
 		tick = time.Minute
 	}
@@ -46,6 +50,7 @@ func New(store *Store, runner Runner, deliver Deliverer, tick time.Duration, max
 	return &Scheduler{
 		store:   store,
 		runner:  runner,
+		scripts: scripts,
 		deliver: deliver,
 		tick:    tick,
 		fireSem: make(chan struct{}, maxParallel),
@@ -127,8 +132,21 @@ func (s *Scheduler) FireNow(ctx context.Context, jobID string) error {
 }
 
 func (s *Scheduler) fire(ctx context.Context, j Job) {
-	sessionID := "cron:" + j.ID
-	reply, runErr := s.runner.Chat(ctx, sessionID, j.Prompt)
+	var (
+		reply  string
+		runErr error
+	)
+	switch j.EffectiveKind() {
+	case KindScript:
+		if s.scripts == nil {
+			runErr = fmt.Errorf("script runner not configured")
+		} else {
+			reply, runErr = s.scripts.RunScript(ctx, j)
+		}
+	default: // KindAgent
+		sessionID := "cron:" + j.ID
+		reply, runErr = s.runner.Chat(ctx, sessionID, j.Prompt)
+	}
 
 	now := time.Now().UTC()
 	_, _ = s.store.Update(j.ID, func(jj *Job) {

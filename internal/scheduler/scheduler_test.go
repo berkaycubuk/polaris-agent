@@ -55,7 +55,7 @@ func TestScheduler_FiresDueOneShot(t *testing.T) {
 
 	runner := &fakeRunner{reply: "pong"}
 	deliv := &captureDeliverer{}
-	s := New(store, runner, deliv, 50*time.Millisecond, 1)
+	s := New(store, runner, nil, deliv, 50*time.Millisecond, 1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -88,7 +88,7 @@ func TestScheduler_RecordsRunError(t *testing.T) {
 		State:    StateScheduled,
 	})
 	runner := &fakeRunner{err: errors.New("boom")}
-	s := New(store, runner, &captureDeliverer{}, 50*time.Millisecond, 1)
+	s := New(store, runner, nil, &captureDeliverer{},50*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	_ = s.Run(ctx)
@@ -109,7 +109,7 @@ func TestScheduler_SkipsPaused(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 	runner := &fakeRunner{}
-	s := New(store, runner, &captureDeliverer{}, 50*time.Millisecond, 1)
+	s := New(store, runner, nil, &captureDeliverer{},50*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	_ = s.Run(ctx)
@@ -127,7 +127,7 @@ func TestScheduler_IntervalRecurs(t *testing.T) {
 		LastRunAt: time.Now().UTC().Add(-1 * time.Second), // already due
 	})
 	runner := &fakeRunner{reply: "ok"}
-	s := New(store, runner, &captureDeliverer{}, 30*time.Millisecond, 1)
+	s := New(store, runner, nil, &captureDeliverer{},30*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	_ = s.Run(ctx)
@@ -149,7 +149,7 @@ func TestScheduler_FireNow(t *testing.T) {
 		State:    StateScheduled,
 	})
 	runner := &fakeRunner{reply: "manual"}
-	s := New(store, runner, &captureDeliverer{}, time.Hour, 1)
+	s := New(store, runner, nil, &captureDeliverer{},time.Hour, 1)
 
 	if err := s.FireNow(context.Background(), job.ID); err != nil {
 		t.Fatal(err)
@@ -161,8 +161,78 @@ func TestScheduler_FireNow(t *testing.T) {
 
 func TestScheduler_FireNow_NotFound(t *testing.T) {
 	store, _ := NewStore(t.TempDir())
-	s := New(store, &fakeRunner{}, &captureDeliverer{}, time.Hour, 1)
+	s := New(store, &fakeRunner{}, nil, &captureDeliverer{}, time.Hour, 1)
 	if err := s.FireNow(context.Background(), "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+type fakeScriptRunner struct {
+	mu     sync.Mutex
+	fired  []string
+	stdout string
+	err    error
+}
+
+func (f *fakeScriptRunner) RunScript(_ context.Context, j Job) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.fired = append(f.fired, j.ID)
+	return f.stdout, f.err
+}
+
+func TestScheduler_FiresScriptKind(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	past := time.Now().UTC().Add(-1 * time.Second)
+	job, _ := store.Add(Job{
+		Kind:     KindScript,
+		Script:   "schedule/scripts/whatever.py",
+		Schedule: Schedule{Kind: "once", RunAt: &past},
+		Origin:   "telegram:1",
+		State:    StateScheduled,
+	})
+
+	scripts := &fakeScriptRunner{stdout: "from script"}
+	deliv := &captureDeliverer{}
+	// Agent runner should NOT be called for a script-kind job.
+	agent := &fakeRunner{reply: "should not be used"}
+	s := New(store, agent, scripts, deliv, 50*time.Millisecond, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	_ = s.Run(ctx)
+
+	if len(agent.sessions()) != 0 {
+		t.Fatalf("agent runner should not fire for script jobs, got %v", agent.sessions())
+	}
+	scripts.mu.Lock()
+	fired := append([]string(nil), scripts.fired...)
+	scripts.mu.Unlock()
+	if len(fired) == 0 || fired[0] != job.ID {
+		t.Fatalf("script runner not invoked for job %s, got %v", job.ID, fired)
+	}
+	if atomic.LoadInt32(&deliv.count) == 0 {
+		t.Fatal("deliverer was never called for script job")
+	}
+	if deliv.last != "from script" {
+		t.Fatalf("delivered reply = %q, want %q", deliv.last, "from script")
+	}
+}
+
+func TestScheduler_ScriptKind_NoRunner(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	past := time.Now().UTC().Add(-1 * time.Second)
+	job, _ := store.Add(Job{
+		Kind:     KindScript,
+		Schedule: Schedule{Kind: "once", RunAt: &past},
+		State:    StateScheduled,
+	})
+	s := New(store, &fakeRunner{}, nil, &captureDeliverer{}, 50*time.Millisecond, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_ = s.Run(ctx)
+	got := store.Get(job.ID)
+	if got.LastError == "" {
+		t.Fatal("expected LastError when ScriptRunner missing")
 	}
 }

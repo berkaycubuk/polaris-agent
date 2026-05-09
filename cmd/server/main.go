@@ -109,7 +109,8 @@ func serve() {
 		log.Fatalf("scheduler store: %v", err)
 	}
 	deliverer := scheduler.NewFanoutDeliverer(filepath.Join(store.Dir(), "output"), tgBot)
-	sched := scheduler.New(store, agentRunner{a}, deliverer, 0, 0)
+	scriptRunner := scheduler.NewExecScriptRunner(cfg.DataDir, registry.ChildEnv(), 0)
+	sched := scheduler.New(store, agentRunner{a}, scriptRunner, deliverer, 0, 0)
 	registry.EnableScheduler(store, sched)
 	log.Printf("scheduler ready: %d job(s) loaded", len(store.List()))
 

@@ -51,7 +51,14 @@ func (r *Registry) register(t Tool) { r.tools[t.Name()] = t }
 // and firer. Called by cmd/server after the scheduler is constructed,
 // since the scheduler depends on the agent which depends on this registry.
 func (r *Registry) EnableScheduler(store *scheduler.Store, firer scheduleFirer) {
-	r.register(&manageSchedule{store: store, sched: firer})
+	r.register(&manageSchedule{store: store, sched: firer, dataDir: r.DataDir})
+}
+
+// ChildEnv exposes the redacted child environment so callers (e.g. the
+// scheduler's script runner) can launch subprocesses with the same secret
+// hygiene the bash tool uses.
+func (r *Registry) ChildEnv() []string {
+	return r.redactor.ChildEnv()
 }
 
 // SkillEnvNames returns the names of secret SKILL_* env vars detected at

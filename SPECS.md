@@ -152,13 +152,28 @@ management with a shared global cache.
 
 Background jobs that fire on a schedule and deliver their reply back to
 the originating session. Stored as `schedule/jobs.json` with atomic
-rewrites; each fired job's output (prompt + reply + metadata) is saved
-to `schedule/output/<job_id>/<timestamp>.md`.
+rewrites; each fired job's output (prompt/script + reply + metadata) is
+saved to `schedule/output/<job_id>/<timestamp>.md`.
 
-A single goroutine ticks every 60s, scans for due jobs, and fires each
-in a fresh agent session (`session_id = "cron:<job_id>"`, no chat
-history). One-shot jobs transition to `done` after firing; recurring
-jobs anchor their next run to `last_run_at`.
+A single goroutine ticks every 60s, scans for due jobs, and fires each.
+One-shot jobs transition to `done` after firing; recurring jobs anchor
+their next run to `last_run_at`.
+
+Two job kinds:
+
+- **`agent`** (default) — runs a fresh LLM turn under
+  `session_id = "cron:<job_id>"` (no chat history). Use when the work
+  needs reasoning, tool calls, or wiki lookups.
+- **`script`** — runs a Python file via `uv run` from the data dir.
+  Stdout becomes the chat message; stderr is hidden so debug prints
+  don't reach the user. Empty stdout = no message. Non-zero exit is
+  recorded as `last_error` and suppressed from delivery. Scripts inherit
+  the same redacted child env as the bash tool, so `SKILL_*` and
+  `SKILL_PUBLIC_*` are available. Use for deterministic checks
+  (calendar fetch, scrape, ping) where invoking an LLM is overkill.
+
+Script bodies are written to `schedule/scripts/<job_id>.py` by
+`manage_schedule create`; removing a job deletes its script file.
 
 Schedule formats:
 - Duration (`30m`, `2h`, `1d`) — one-shot from now
@@ -206,10 +221,13 @@ TF-IDF scoring.
 Manage scheduled background jobs. Single compressed action-oriented tool
 with six actions: `create`, `list`, `remove`, `pause`, `resume`, `run`.
 
-- `create` requires `prompt` + `schedule`. Origin is captured from the
-  active session ID at create time and used as the delivery target.
-- `list` returns id, name, schedule, state, next/last run for every job.
-- `remove` deletes a job by id. `pause`/`resume` toggle whether it fires.
+- `create` requires `schedule` plus either `prompt` (kind=`agent`,
+  default) or `script` (kind=`script`, the Python source). Origin is
+  captured from the active session ID at create time and used as the
+  delivery target.
+- `list` returns id, name, kind, schedule, state, next/last run for every job.
+- `remove` deletes a job by id. Script files are deleted alongside.
+  `pause`/`resume` toggle whether a job fires.
 - `run` fires a job immediately (used for testing).
 
 Cron-originated sessions (`cron:*`) cannot create new jobs — the tool

@@ -6,7 +6,9 @@ import "time"
 type Job struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name,omitempty"`
-	Prompt    string    `json:"prompt"`
+	Kind      string    `json:"kind,omitempty"` // "agent" (default) or "script"
+	Prompt    string    `json:"prompt,omitempty"`
+	Script    string    `json:"script,omitempty"` // path relative to dataDir, set when Kind=="script"
 	Schedule  Schedule  `json:"schedule"`
 	Origin    string    `json:"origin"` // session ID at create — also the delivery target
 	State     string    `json:"state"`  // "scheduled", "paused", "done"
@@ -21,7 +23,19 @@ const (
 	StateScheduled = "scheduled"
 	StatePaused    = "paused"
 	StateDone      = "done"
+
+	KindAgent  = "agent"
+	KindScript = "script"
 )
+
+// EffectiveKind returns the job's kind, defaulting to KindAgent for jobs
+// that pre-date the field.
+func (j *Job) EffectiveKind() string {
+	if j.Kind == "" {
+		return KindAgent
+	}
+	return j.Kind
+}
 
 // Active returns true if the scheduler should consider this job for firing.
 func (j *Job) Active() bool {
