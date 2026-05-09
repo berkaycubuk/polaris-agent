@@ -193,7 +193,7 @@ func TestManageSchedule_CreateScript(t *testing.T) {
 func TestManageSchedule_CreateScriptValidation(t *testing.T) {
 	tool, _, _ := newScheduleTool(t)
 	cases := map[string]string{
-		"missing-script":  `{"action":"create","kind":"script","schedule":"1h"}`,
+		"missing-script":     `{"action":"create","kind":"script","schedule":"1h"}`,
 		"prompt-with-script": `{"action":"create","kind":"script","schedule":"1h","script":"x","prompt":"y"}`,
 		"script-with-agent":  `{"action":"create","kind":"agent","schedule":"1h","prompt":"x","script":"y"}`,
 		"unknown-kind":       `{"action":"create","kind":"weird","schedule":"1h","prompt":"x"}`,

@@ -106,14 +106,14 @@ func TestPruneHistory_DisabledWhenCapZero(t *testing.T) {
 
 func TestLooksLikeContextOverflow(t *testing.T) {
 	cases := map[string]bool{
-		"prompt exceeds max length":            true,
-		"code: 1261 message: prompt too long":  true,
+		"prompt exceeds max length":                            true,
+		"code: 1261 message: prompt too long":                  true,
 		"This model's maximum context length is 128000 tokens": true,
-		"too many tokens":                      true,
-		"context window exceeded":              true,
-		"unauthorized":                         false,
-		"rate limit reached":                   false,
-		"":                                     false,
+		"too many tokens":                                      true,
+		"context window exceeded":                              true,
+		"unauthorized":                                         false,
+		"rate limit reached":                                   false,
+		"":                                                     false,
 	}
 	for msg, want := range cases {
 		var err error

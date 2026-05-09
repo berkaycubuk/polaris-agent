@@ -88,7 +88,7 @@ func TestScheduler_RecordsRunError(t *testing.T) {
 		State:    StateScheduled,
 	})
 	runner := &fakeRunner{err: errors.New("boom")}
-	s := New(store, runner, nil, &captureDeliverer{},50*time.Millisecond, 1)
+	s := New(store, runner, nil, &captureDeliverer{}, 50*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	_ = s.Run(ctx)
@@ -109,7 +109,7 @@ func TestScheduler_SkipsPaused(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 	runner := &fakeRunner{}
-	s := New(store, runner, nil, &captureDeliverer{},50*time.Millisecond, 1)
+	s := New(store, runner, nil, &captureDeliverer{}, 50*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	_ = s.Run(ctx)
@@ -127,7 +127,7 @@ func TestScheduler_IntervalRecurs(t *testing.T) {
 		LastRunAt: time.Now().UTC().Add(-1 * time.Second), // already due
 	})
 	runner := &fakeRunner{reply: "ok"}
-	s := New(store, runner, nil, &captureDeliverer{},30*time.Millisecond, 1)
+	s := New(store, runner, nil, &captureDeliverer{}, 30*time.Millisecond, 1)
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	_ = s.Run(ctx)
@@ -149,7 +149,7 @@ func TestScheduler_FireNow(t *testing.T) {
 		State:    StateScheduled,
 	})
 	runner := &fakeRunner{reply: "manual"}
-	s := New(store, runner, nil, &captureDeliverer{},time.Hour, 1)
+	s := New(store, runner, nil, &captureDeliverer{}, time.Hour, 1)
 
 	if err := s.FireNow(context.Background(), job.ID); err != nil {
 		t.Fatal(err)
